@@ -19,6 +19,11 @@ typedef struct
    char pending_challenge_to[MAX_USERNAME_LEN];      // username we challenged (if any)
    char pending_challenge_from[MAX_USERNAME_LEN];    // username who challenged us (if any)
    int is_turn; // for in-game: 1 if it's this client's turn, else 0
+   // Friends
+   char friends[MAX_FRIENDS][MAX_USERNAME_LEN];
+   int friend_count;
+   char pending_friend_to[MAX_USERNAME_LEN];
+   char pending_friend_from[MAX_USERNAME_LEN];
 } Client;
 
 void init(void);
@@ -48,5 +53,10 @@ void handle_quit_command(int sock, Client *clients, int client_index, int actual
 void handle_games_command(int sock, Client *clients, int actual);
 void handle_watch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str);
 void handle_unwatch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str);
+void handle_addfriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
+void handle_acceptfriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
+void handle_refusefriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
+void handle_private_command(int sock, Client *clients, int client_index, int actual, const char *arg);
+void handle_friends_command(int sock, Client *clients, int client_index, int actual);
 
 #endif /* guard */

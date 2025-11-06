@@ -21,6 +21,7 @@ typedef struct {
    Board board;
    int watchers[MAX_CLIENTS]; // sockets of watchers
    int watcher_count;
+   int private_mode; // if 1 only friends can watch
 } Match;
 
 static Match matches[MAX_MATCHES];
@@ -31,6 +32,22 @@ static int find_client_index_by_name(Client *clients, int actual, const char *na
       if (strcmp(clients[i].name, name) == 0) return i;
    }
    return -1;
+}
+
+static int is_friend(const Client *c, const char *username) {
+   for (int i = 0; i < c->friend_count; i++) {
+      if (strcmp(c->friends[i], username) == 0) return 1;
+   }
+   return 0;
+}
+
+static int add_friend(Client *c, const char *username) {
+   if (c->friend_count >= MAX_FRIENDS) return 0;
+   if (is_friend(c, username)) return 1;
+   strncpy(c->friends[c->friend_count], username, MAX_USERNAME_LEN - 1);
+   c->friends[c->friend_count][MAX_USERNAME_LEN-1] = '\0';
+   c->friend_count++;
+   return 1;
 }
 
 static void notify(int sock, MessageType type, const char *fmt, ...) {
@@ -85,6 +102,7 @@ static Match* start_match(Client *clients, int a, int b) {
    m->player2_index = b;
    init_board(&m->board);
    m->watcher_count = 0;
+   m->private_mode = 0;
    clients[a].status = CLIENT_IN_MATCH;
    clients[b].status = CLIENT_IN_MATCH;
    clients[a].current_match = m->id;
@@ -276,6 +294,21 @@ void app(void)
                   }
                   else if (strcmp(command, CMD_UNWATCH) == 0) {
                      handle_unwatch_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_ADD_FRIEND) == 0) {
+                     handle_addfriend_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_ACCEPT_FRIEND) == 0) {
+                     handle_acceptfriend_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_REFUSE_FRIEND) == 0) {
+                     handle_refusefriend_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_PRIVATE) == 0) {
+                     handle_private_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_FRIENDS) == 0) {
+                     handle_friends_command(clients[i].sock, clients, i, actual);
                   }
                   else if (strcmp(command, CMD_CHALLENGE) == 0) {
                      handle_challenge_command(clients[i].sock, clients, i, actual, args);
@@ -917,6 +950,15 @@ void handle_watch_command(int sock, Client *clients, int client_index, int actua
       notify(sock, MSG_ERROR, "You are already playing in this match");
       return;
    }
+   // Enforce privacy: if match is private, must be friend with at least one player (both acceptable)
+   if (m->private_mode) {
+      const char *watcher_name = clients[client_index].name;
+      int ok = is_friend(&clients[m->player1_index], watcher_name) || is_friend(&clients[m->player2_index], watcher_name);
+      if (!ok) {
+         notify(sock, MSG_ERROR, "This match is private; only friends can watch");
+         return;
+      }
+   }
    // Add watcher if not already
    for (int i = 0; i < m->watcher_count; i++) {
       if (m->watchers[i] == clients[client_index].sock) {
@@ -965,6 +1007,107 @@ void handle_unwatch_command(int sock, Client *clients, int client_index, int act
       return;
    }
    notify(sock, MSG_INFO, "Stopped watching match #%d", id);
+}
+
+void handle_addfriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+{
+   (void)actual;
+   if (!target_name || strlen(target_name) == 0) { notify(sock, MSG_ERROR, "Usage: addfriend <username>"); return; }
+   if (strcmp(target_name, clients[client_index].name) == 0) { notify(sock, MSG_ERROR, "Cannot friend yourself"); return; }
+   int t = find_client_index_by_name(clients, actual, target_name);
+   if (t == -1) { notify(sock, MSG_ERROR, "User '%s' not found", target_name); return; }
+   if (is_friend(&clients[client_index], target_name)) { notify(sock, MSG_INFO, "%s already in friends", target_name); return; }
+   if (clients[client_index].pending_friend_to[0] != '\0') { notify(sock, MSG_ERROR, "You already sent a friend request to %s", clients[client_index].pending_friend_to); return; }
+   if (clients[client_index].pending_friend_from[0] != '\0') { notify(sock, MSG_ERROR, "You have an incoming friend request from %s", clients[client_index].pending_friend_from); return; }
+   if (clients[t].pending_friend_to[0] != '\0' && strcmp(clients[t].pending_friend_to, clients[client_index].name) == 0) { notify(sock, MSG_ERROR, "You both sent requests; ask them to accept"); return; }
+   strncpy(clients[client_index].pending_friend_to, clients[t].name, MAX_USERNAME_LEN-1); clients[client_index].pending_friend_to[MAX_USERNAME_LEN-1]=0;
+   strncpy(clients[t].pending_friend_from, clients[client_index].name, MAX_USERNAME_LEN-1); clients[t].pending_friend_from[MAX_USERNAME_LEN-1]=0;
+   notify(sock, MSG_FRIEND_REQUEST, "Friend request sent to %s", clients[t].name);
+   notify(clients[t].sock, MSG_FRIEND_REQUEST, "Friend request from %s (acceptfriend %s / refusefriend %s)", clients[client_index].name, clients[client_index].name, clients[client_index].name);
+}
+
+void handle_acceptfriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+{
+   (void)actual;
+   if (!target_name || strlen(target_name) == 0) { notify(sock, MSG_ERROR, "Usage: acceptfriend <username>"); return; }
+   if (clients[client_index].pending_friend_from[0] == '\0' || strcmp(clients[client_index].pending_friend_from, target_name) != 0) { notify(sock, MSG_ERROR, "No pending friend request from %s", target_name); return; }
+   int t = find_client_index_by_name(clients, actual, target_name);
+   if (t == -1) { notify(sock, MSG_ERROR, "User '%s' disconnected", target_name); clients[client_index].pending_friend_from[0]=0; return; }
+   add_friend(&clients[client_index], clients[t].name);
+   add_friend(&clients[t], clients[client_index].name);
+   clients[client_index].pending_friend_from[0] = '\0';
+   clients[t].pending_friend_to[0] = '\0';
+   notify(sock, MSG_FRIEND_RESPONSE, "%s added to friends", clients[t].name);
+   notify(clients[t].sock, MSG_FRIEND_RESPONSE, "%s accepted your friend request", clients[client_index].name);
+}
+
+void handle_refusefriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+{
+   (void)actual;
+   if (!target_name || strlen(target_name) == 0) { notify(sock, MSG_ERROR, "Usage: refusefriend <username>"); return; }
+   if (clients[client_index].pending_friend_from[0] == '\0' || strcmp(clients[client_index].pending_friend_from, target_name) != 0) { notify(sock, MSG_ERROR, "No pending friend request from %s", target_name); return; }
+   int t = find_client_index_by_name(clients, actual, target_name);
+   if (t != -1) {
+      notify(clients[t].sock, MSG_FRIEND_RESPONSE, "%s refused your friend request", clients[client_index].name);
+      clients[t].pending_friend_to[0] = '\0';
+   }
+   clients[client_index].pending_friend_from[0] = '\0';
+   notify(sock, MSG_FRIEND_RESPONSE, "Friend request from %s refused", target_name);
+}
+
+void handle_private_command(int sock, Client *clients, int client_index, int actual, const char *arg)
+{
+   (void)actual;
+   if (clients[client_index].status != CLIENT_IN_MATCH) { notify(sock, MSG_ERROR, "You are not in a match"); return; }
+   Match *m = NULL; for (int i=0;i<match_count;i++){ if (matches[i].id == clients[client_index].current_match){ m=&matches[i]; break; } }
+   if (!m) { notify(sock, MSG_ERROR, "Internal: match not found"); return; }
+   if (!arg || strlen(arg)==0) { notify(sock, MSG_ERROR, "Usage: private on|off"); return; }
+   if (strcmp(arg, "on") == 0) {
+      m->private_mode = 1;
+      // Remove non-friend watchers
+      for (int i = 0; i < m->watcher_count; ) {
+         int wsock = m->watchers[i];
+         // find client index by socket
+         int cindex = -1; for (int k=0;k<actual;k++){ if (clients[k].sock == wsock){ cindex = k; break; }}
+         if (cindex != -1) {
+            const char *wname = clients[cindex].name;
+            int ok = is_friend(&clients[m->player1_index], wname) || is_friend(&clients[m->player2_index], wname);
+            if (!ok) {
+               // notify and remove
+               notify(wsock, MSG_INFO, "Removed from private match #%d", m->id);
+               for (int j=i; j < m->watcher_count-1; j++) m->watchers[j] = m->watchers[j+1];
+               m->watcher_count--;
+               continue; // don't increment i (shifted elements)
+            }
+         }
+         i++; // keep
+      }
+      notify(sock, MSG_INFO, "Match #%d now private", m->id);
+   } else if (strcmp(arg, "off") == 0) {
+      m->private_mode = 0;
+      notify(sock, MSG_INFO, "Match #%d now public", m->id);
+   } else {
+      notify(sock, MSG_ERROR, "Usage: private on|off");
+   }
+}
+
+void handle_friends_command(int sock, Client *clients, int client_index, int actual)
+{
+   (void)actual;
+   char payload[BUF_SIZE];
+   if (clients[client_index].friend_count == 0) {
+      snprintf(payload, sizeof(payload), "(no friends)");
+   } else {
+      payload[0] = '\0';
+      for (int i = 0; i < clients[client_index].friend_count; i++) {
+         strncat(payload, clients[client_index].friends[i], sizeof(payload)-strlen(payload)-1);
+         if (i < clients[client_index].friend_count - 1)
+            strncat(payload, ",", sizeof(payload)-strlen(payload)-1);
+      }
+   }
+   char msg[BUF_SIZE];
+   protocol_create_message(msg, sizeof(msg), MSG_FRIEND_LIST, payload);
+   write_client(sock, msg);
 }
 
 void handle_games_command(int sock, Client *clients, int actual)
