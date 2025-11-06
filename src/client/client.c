@@ -123,6 +123,9 @@ void app(const char *address, const char *name)
                 case MSG_BIO_INFO:
                     printf("%s[bio]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
                     break;
+                case MSG_PRIVATE_CHAT:
+                    printf("%s[pm]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    break;
                 case MSG_ERROR:
                     printf("%s[error]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
                     break;
@@ -279,6 +282,17 @@ void process_command(int sock, const char *input)
         snprintf(getbio_cmd, BUF_SIZE, "%s %s", CMD_GET_BIO, args);
         write_to_server(sock, getbio_cmd);
     }
+    else if (strcmp(command, CMD_PM) == 0)
+    {
+        if (args == NULL || strlen(args) == 0 || strchr(args, ' ') == NULL)
+        {
+            printf("%s[error]%s Usage: pm <user> <message>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char pm_cmd[BUF_SIZE];
+        snprintf(pm_cmd, BUF_SIZE, "%s %s", CMD_PM, args);
+        write_to_server(sock, pm_cmd);
+    }
     else if (strcmp(command, "help") == 0)
     {
         printf("%s[help]%s Available commands:\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET);
@@ -286,6 +300,7 @@ void process_command(int sock, const char *input)
         printf("    list               - Show all online users and their bios\n");
         printf("    challenge <user>   - Challenge a user to a game\n");
         printf("    bio <text>         - Set your bio (max 256 characters)\n");
+        printf("    pm <user> <msg>    - Send a private message\n");
         printf("    getbio <user>      - Get a user's bio\n");
         printf("    help               - Show this help message\n");
     }
