@@ -10,6 +10,84 @@
 #include "server.h"
 #include "../utils/constants.h"
 #include "../protocol/protocol.h"
+#include "../core/awale.h"
+#include <time.h>
+#include <stdarg.h>
+
+typedef struct {
+   int id;
+   int player1_index; // index in clients array
+   int player2_index; // index in clients array
+   Board board;
+} Match;
+
+static Match matches[MAX_MATCHES];
+static int match_count = 0;
+
+static int find_client_index_by_name(Client *clients, int actual, const char *name) {
+   for (int i = 0; i < actual; i++) {
+      if (strcmp(clients[i].name, name) == 0) return i;
+   }
+   return -1;
+}
+
+static void notify(int sock, MessageType type, const char *fmt, ...) {
+   char payload[BUF_SIZE];
+   va_list ap; va_start(ap, fmt);
+   vsnprintf(payload, sizeof(payload), fmt, ap);
+   va_end(ap);
+   char msg[BUF_SIZE];
+   protocol_create_message(msg, sizeof(msg), type, payload);
+   write_client(sock, msg);
+}
+
+static void broadcast_board(Match *m, Client *clients) {
+   char board_txt[BUF_SIZE];
+   render_board(&m->board, board_txt, sizeof(board_txt));
+   char msg[BUF_SIZE];
+   protocol_create_message(msg, sizeof(msg), MSG_BOARD_UPDATE, board_txt);
+   write_client(clients[m->player1_index].sock, msg);
+   write_client(clients[m->player2_index].sock, msg);
+}
+
+static void end_match(Match *m, Client *clients) {
+   if (!m) return;
+   clients[m->player1_index].status = CLIENT_IDLE;
+   clients[m->player2_index].status = CLIENT_IDLE;
+   clients[m->player1_index].current_match = -1;
+   clients[m->player2_index].current_match = -1;
+   clients[m->player1_index].is_turn = 0;
+   clients[m->player2_index].is_turn = 0;
+}
+
+static Match* start_match(Client *clients, int a, int b) {
+   if (match_count >= MAX_MATCHES) return NULL;
+   Match *m = &matches[match_count];
+   m->id = match_count;
+   m->player1_index = a;
+   m->player2_index = b;
+   init_board(&m->board);
+   clients[a].status = CLIENT_IN_MATCH;
+   clients[b].status = CLIENT_IN_MATCH;
+   clients[a].current_match = m->id;
+   clients[b].current_match = m->id;
+   // Randomly choose who starts: 0 -> a, 1 -> b
+   srand((unsigned int)time(NULL) ^ (unsigned int)(a<<8) ^ (unsigned int)(b<<16));
+   int starter = rand() % 2;
+   if (starter == 0) {
+      m->board.current_player = 0; // we'll map: current_player 0 -> a, 1 -> b
+      clients[a].is_turn = 1; clients[b].is_turn = 0;
+   } else {
+      m->board.current_player = 1;
+      clients[a].is_turn = 0; clients[b].is_turn = 1;
+   }
+   // Notify players
+   notify(clients[a].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[b].name, clients[a].is_turn?"You":"Opponent");
+   notify(clients[b].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[a].name, clients[b].is_turn?"You":"Opponent");
+   broadcast_board(m, clients);
+   match_count++;
+   return m;
+}
 
 void app(void)
 {
@@ -171,6 +249,24 @@ void app(void)
                   }
                   else if (strcmp(command, CMD_PM) == 0) {
                      handle_pm_command(clients[i].sock, clients, client, actual, args);
+                  }
+                  else if (strcmp(command, CMD_CHALLENGE) == 0) {
+                     handle_challenge_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_ACCEPT) == 0) {
+                     handle_accept_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_REFUSE) == 0) {
+                     handle_refuse_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_CANCEL) == 0) {
+                     handle_cancel_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_MOVE) == 0) {
+                     handle_move_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_QUIT) == 0) {
+                     handle_quit_command(clients[i].sock, clients, i, actual);
                   }
                   else {
                      /* Unknown command or regular message */
@@ -588,4 +684,178 @@ void handle_pm_command(int sock, Client *clients, Client sender, int actual, con
    /* Send to target and confirmation to sender */
    write_client(clients[target_index].sock, to_target_msg);
    write_client(sock, to_sender_msg);
+}
+
+void handle_challenge_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+{
+   if (clients[client_index].status != CLIENT_IDLE) {
+      notify(sock, MSG_ERROR, "You can't challenge while in a game or awaiting acceptance");
+      return;
+   }
+   if (clients[client_index].pending_challenge_to[0] != '\0') {
+      notify(sock, MSG_ERROR, "You already have a pending challenge to %s", clients[client_index].pending_challenge_to);
+      return;
+   }
+   if (!target_name || strlen(target_name) == 0) {
+      notify(sock, MSG_ERROR, "Usage: challenge <username>");
+      return;
+   }
+   if (strcmp(target_name, clients[client_index].name) == 0) {
+      notify(sock, MSG_ERROR, "You cannot challenge yourself");
+      return;
+   }
+   int t = find_client_index_by_name(clients, actual, target_name);
+   if (t == -1) {
+      notify(sock, MSG_ERROR, "User '%s' not found", target_name);
+      return;
+   }
+   if (clients[t].status != CLIENT_IDLE) {
+      notify(sock, MSG_ERROR, "User '%s' is busy", clients[t].name);
+      return;
+   }
+   if (clients[t].pending_challenge_from[0] != '\0') {
+      notify(sock, MSG_ERROR, "User '%s' already has a pending challenge", clients[t].name);
+      return;
+   }
+   strncpy(clients[client_index].pending_challenge_to, clients[t].name, MAX_USERNAME_LEN-1);
+   clients[client_index].pending_challenge_to[MAX_USERNAME_LEN-1] = '\0';
+   strncpy(clients[t].pending_challenge_from, clients[client_index].name, MAX_USERNAME_LEN-1);
+   clients[t].pending_challenge_from[MAX_USERNAME_LEN-1] = '\0';
+   clients[client_index].status = CLIENT_WAITING_FOR_ACCEPT;
+   notify(sock, MSG_INFO, "Challenge sent to %s", clients[t].name);
+   notify(clients[t].sock, MSG_CHALLENGE, "from %s", clients[client_index].name);
+}
+
+void handle_cancel_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+{
+   (void)actual; // unused
+   if (clients[client_index].pending_challenge_to[0] == '\0') {
+      notify(sock, MSG_ERROR, "No pending challenge to cancel");
+      return;
+   }
+   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_to) != 0) {
+      notify(sock, MSG_ERROR, "Your pending challenge is to %s", clients[client_index].pending_challenge_to);
+      return;
+   }
+   int t = find_client_index_by_name(clients, actual, clients[client_index].pending_challenge_to);
+   if (t != -1) {
+      notify(clients[t].sock, MSG_CHALLENGE_RESPONSE, "%s cancelled the challenge", clients[client_index].name);
+      clients[t].pending_challenge_from[0] = '\0';
+   }
+   clients[client_index].pending_challenge_to[0] = '\0';
+   clients[client_index].status = CLIENT_IDLE;
+   notify(sock, MSG_INFO, "Challenge cancelled");
+}
+
+void handle_refuse_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+{
+   if (clients[client_index].pending_challenge_from[0] == '\0') {
+      notify(sock, MSG_ERROR, "You have no incoming challenge");
+      return;
+   }
+   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_from) != 0) {
+      notify(sock, MSG_ERROR, "Incoming challenge is from %s", clients[client_index].pending_challenge_from);
+      return;
+   }
+   int s = find_client_index_by_name(clients, actual, clients[client_index].pending_challenge_from);
+   if (s != -1) {
+      notify(clients[s].sock, MSG_CHALLENGE_RESPONSE, "%s refused your challenge", clients[client_index].name);
+      clients[s].pending_challenge_to[0] = '\0';
+      clients[s].status = CLIENT_IDLE;
+   }
+   clients[client_index].pending_challenge_from[0] = '\0';
+   notify(sock, MSG_INFO, "Challenge refused");
+}
+
+void handle_accept_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+{
+   if (clients[client_index].pending_challenge_from[0] == '\0') {
+      notify(sock, MSG_ERROR, "You have no incoming challenge");
+      return;
+   }
+   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_from) != 0) {
+      notify(sock, MSG_ERROR, "Incoming challenge is from %s", clients[client_index].pending_challenge_from);
+      return;
+   }
+   int s = find_client_index_by_name(clients, actual, clients[client_index].pending_challenge_from);
+   if (s == -1) {
+      notify(sock, MSG_ERROR, "Challenger disconnected");
+      clients[client_index].pending_challenge_from[0] = '\0';
+      return;
+   }
+   // clear challenge states
+   clients[s].pending_challenge_to[0] = '\0';
+   clients[client_index].pending_challenge_from[0] = '\0';
+   // start match
+   start_match(clients, s, client_index);
+}
+
+static Match* get_match_by_id(int id) {
+   if (id < 0 || id >= match_count) return NULL;
+   return &matches[id];
+}
+
+void handle_move_command(int sock, Client *clients, int client_index, int actual, const char *pit_str)
+{
+   (void)actual; // unused
+   if (clients[client_index].status != CLIENT_IN_MATCH) {
+      notify(sock, MSG_ERROR, "You are not in a game");
+      return;
+   }
+   if (!clients[client_index].is_turn) {
+      notify(sock, MSG_ERROR, "Not your turn");
+      return;
+   }
+   if (!pit_str || strlen(pit_str)==0) {
+      notify(sock, MSG_ERROR, "Usage: move <pit>");
+      return;
+   }
+   int pit = atoi(pit_str);
+   Match *m = get_match_by_id(clients[client_index].current_match);
+   if (!m) { notify(sock, MSG_ERROR, "Internal error: match missing"); return; }
+   int is_player_a = (client_index == m->player1_index);
+   int logical_player = is_player_a ? 0 : 1; // map to board.current_player
+   if (m->board.current_player != logical_player) {
+      notify(sock, MSG_ERROR, "Not your turn");
+      return;
+   }
+   if (!is_valid_move(&m->board, pit)) {
+      notify(sock, MSG_ERROR, "Invalid move");
+      return;
+   }
+   make_move(&m->board, pit);
+   // swap turns
+   clients[m->player1_index].is_turn = (m->board.current_player == 0);
+   clients[m->player2_index].is_turn = (m->board.current_player == 1);
+   // notify move
+   notify(clients[m->player1_index].sock, MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
+   notify(clients[m->player2_index].sock, MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
+   broadcast_board(m, clients);
+   if (is_game_over(&m->board)) {
+      // announce winner
+      const char *winner = NULL;
+      if (m->board.score[0] > m->board.score[1]) winner = clients[m->player1_index].name;
+      else if (m->board.score[1] > m->board.score[0]) winner = clients[m->player2_index].name;
+      char payload[BUF_SIZE];
+      if (winner) snprintf(payload, sizeof(payload), "Game over. Winner: %s (%d-%d)", winner, m->board.score[0], m->board.score[1]);
+      else snprintf(payload, sizeof(payload), "Game over. Draw (%d-%d)", m->board.score[0], m->board.score[1]);
+      notify(clients[m->player1_index].sock, MSG_GAME_OVER, "%s", payload);
+      notify(clients[m->player2_index].sock, MSG_GAME_OVER, "%s", payload);
+      end_match(m, clients);
+   }
+}
+
+void handle_quit_command(int sock, Client *clients, int client_index, int actual)
+{
+   (void)actual; // unused
+   if (clients[client_index].status != CLIENT_IN_MATCH) {
+      notify(sock, MSG_ERROR, "You are not in a game");
+      return;
+   }
+   Match *m = get_match_by_id(clients[client_index].current_match);
+   if (!m) { notify(sock, MSG_ERROR, "Internal error: match missing"); return; }
+   int other = (client_index == m->player1_index) ? m->player2_index : m->player1_index;
+   notify(clients[other].sock, MSG_GAME_OVER, "%s quit the game", clients[client_index].name);
+   notify(sock, MSG_GAME_OVER, "You quit the game");
+   end_match(m, clients);
 }

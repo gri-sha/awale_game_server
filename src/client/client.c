@@ -126,6 +126,21 @@ void app(const char *address, const char *name)
                 case MSG_PRIVATE_CHAT:
                     printf("%s[pm]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
                     break;
+                case MSG_CHALLENGE:
+                    printf("%s[challenge]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    break;
+                case MSG_CHALLENGE_RESPONSE:
+                    printf("%s[challenge]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    break;
+                case MSG_BOARD_UPDATE:
+                    printf("%s[board]%s\n%s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
+                    break;
+                case MSG_MOVE:
+                    printf("%s[move]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
+                    break;
+                case MSG_GAME_OVER:
+                    printf("%s[game]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
+                    break;
                 case MSG_ERROR:
                     printf("%s[error]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
                     break;
@@ -253,6 +268,65 @@ void process_command(int sock, const char *input)
         /* Send message to server */
         write_to_server(sock, args);
     }
+    else if (strcmp(command, CMD_CHALLENGE) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: challenge <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_CHALLENGE, args);
+        write_to_server(sock, cmd);
+    }
+    else if (strcmp(command, CMD_ACCEPT) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: accept <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_ACCEPT, args);
+        write_to_server(sock, cmd);
+    }
+    else if (strcmp(command, CMD_REFUSE) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: refuse <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_REFUSE, args);
+        write_to_server(sock, cmd);
+    }
+    else if (strcmp(command, CMD_CANCEL) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: cancel <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_CANCEL, args);
+        write_to_server(sock, cmd);
+    }
+    else if (strcmp(command, CMD_MOVE) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: move <pit_index>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_MOVE, args);
+        write_to_server(sock, cmd);
+    }
+    else if (strcmp(command, CMD_QUIT) == 0)
+    {
+        write_to_server(sock, CMD_QUIT);
+    }
     else if (strcmp(command, CMD_LIST_USERS) == 0)
     {
         /* Send list request to server */
@@ -299,9 +373,14 @@ void process_command(int sock, const char *input)
         printf("    msg <message>      - Send a message to all users\n");
         printf("    list               - Show all online users and their bios\n");
         printf("    challenge <user>   - Challenge a user to a game\n");
+        printf("    accept <user>      - Accept a challenge from a user\n");
+        printf("    refuse <user>      - Refuse a challenge from a user\n");
+        printf("    cancel <user>      - Cancel your pending challenge\n");
         printf("    bio <text>         - Set your bio (max 256 characters)\n");
         printf("    pm <user> <msg>    - Send a private message\n");
         printf("    getbio <user>      - Get a user's bio\n");
+        printf("    move <pit>         - Make a move (in game)\n");
+        printf("    quit               - Quit current game\n");
         printf("    help               - Show this help message\n");
     }
     else
