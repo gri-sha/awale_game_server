@@ -138,6 +138,9 @@ void app(const char *address, const char *name)
                 case MSG_MOVE:
                     printf("%s[move]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
                     break;
+                case MSG_MATCH_LIST:
+                    printf("%s[games]%s\n%s", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    break;
                 case MSG_GAME_OVER:
                     printf("%s[game]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
                     break;
@@ -356,6 +359,10 @@ void process_command(int sock, const char *input)
         snprintf(getbio_cmd, BUF_SIZE, "%s %s", CMD_GET_BIO, args);
         write_to_server(sock, getbio_cmd);
     }
+    else if (strcmp(command, CMD_GAMES) == 0)
+    {
+        write_to_server(sock, CMD_GAMES);
+    }
     else if (strcmp(command, CMD_PM) == 0)
     {
         if (args == NULL || strlen(args) == 0 || strchr(args, ' ') == NULL)
@@ -381,6 +388,7 @@ void process_command(int sock, const char *input)
         printf("    getbio <user>      - Get a user's bio\n");
         printf("    move <pit>         - Make a move (in game)\n");
         printf("    quit               - Quit current game\n");
+        printf("    games              - List running games\n");
         printf("    help               - Show this help message\n");
     }
     else

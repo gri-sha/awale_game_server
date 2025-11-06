@@ -22,6 +22,7 @@
  *  "bio my bio text"          → set bio
  *  "getbio alice"             → get user's bio
  *  "pm alice hello"           → private message to a user
+ *  "games"                    → list running games
  */
 
 /* MESSAGE TYPES - Server to Client responses */
@@ -38,7 +39,8 @@ typedef enum {
     MSG_INFO = 9,
     MSG_BIO_SET = 10,
     MSG_BIO_INFO = 11,
-    MSG_PRIVATE_CHAT = 12
+    MSG_PRIVATE_CHAT = 12,
+    MSG_MATCH_LIST = 13
 } MessageType;
 
 /* CLIENT COMMANDS - Client to Server requests */
@@ -54,6 +56,7 @@ typedef enum {
 #define CMD_PM "pm"
 #define CMD_CANCEL "cancel"
 #define CMD_QUIT "quit"
+#define CMD_GAMES "games"
 
 /* Create a formatted message from type and payload */
 void protocol_create_message(char *buffer, size_t buf_size, MessageType type, const char *payload);
