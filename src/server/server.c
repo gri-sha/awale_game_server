@@ -166,6 +166,9 @@ void app(void)
                   else if (strcmp(command, CMD_SET_BIO) == 0) {
                      handle_bio_command(clients[i].sock, clients, i, args);
                   }
+                  else if (strcmp(command, CMD_GET_BIO) == 0) {
+                     handle_getbio_command(clients[i].sock, clients, actual, args);
+                  }
                   else {
                      /* Unknown command or regular message */
                      handle_message_command(clients[i].sock, clients, client, actual, buffer);
@@ -445,4 +448,52 @@ void handle_bio_command(int sock, Client *clients, int client_index, const char 
    write_client(sock, ack);
    
    printf("%s[bio]%s %s updated bio: %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, clients[client_index].name, clients[client_index].bio);
+}
+
+void handle_getbio_command(int sock, Client *clients, int actual, const char *username)
+{
+   /* Validate username */
+   if (username == NULL || strlen(username) == 0)
+   {
+      char error_msg[BUF_SIZE];
+      protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, "Usage: getbio <username>");
+      write_client(sock, error_msg);
+      return;
+   }
+
+   /* Find the user among connected clients */
+   int found_index = -1;
+   for (int i = 0; i < actual; i++)
+   {
+      if (strcmp(clients[i].name, username) == 0)
+      {
+         found_index = i;
+         break;
+      }
+   }
+
+   if (found_index == -1)
+   {
+      char error_msg[BUF_SIZE];
+      char tmp[BUF_SIZE];
+      snprintf(tmp, BUF_SIZE, "User '%s' not found", username);
+      protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, tmp);
+      write_client(sock, error_msg);
+      return;
+   }
+
+   /* Build bio response */
+   char payload[BUF_SIZE];
+   if (strlen(clients[found_index].bio) > 0)
+   {
+      snprintf(payload, BUF_SIZE, "%s: %s", clients[found_index].name, clients[found_index].bio);
+   }
+   else
+   {
+      snprintf(payload, BUF_SIZE, "%s: no bio", clients[found_index].name);
+   }
+
+   char response[BUF_SIZE];
+   protocol_create_message(response, BUF_SIZE, MSG_BIO_INFO, payload);
+   write_client(sock, response);
 }

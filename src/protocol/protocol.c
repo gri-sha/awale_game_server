@@ -48,7 +48,8 @@ int protocol_is_command(const char *input)
         strncmp(input, CMD_ACCEPT, strlen(CMD_ACCEPT)) == 0 ||
         strncmp(input, CMD_REFUSE, strlen(CMD_REFUSE)) == 0 ||
         strncmp(input, CMD_MOVE, strlen(CMD_MOVE)) == 0 ||
-        strncmp(input, CMD_SET_BIO, strlen(CMD_SET_BIO)) == 0) {
+        strncmp(input, CMD_SET_BIO, strlen(CMD_SET_BIO)) == 0 ||
+        strncmp(input, CMD_GET_BIO, strlen(CMD_GET_BIO)) == 0) {
         return 1;
     }
     return 0;
