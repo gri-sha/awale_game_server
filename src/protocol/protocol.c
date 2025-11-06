@@ -55,7 +55,12 @@ int protocol_is_command(const char *input)
         strncmp(input, CMD_PM, strlen(CMD_PM)) == 0 ||
         strcmp(input, CMD_GAMES) == 0 ||
             strncmp(input, CMD_WATCH, strlen(CMD_WATCH)) == 0 ||
-            strncmp(input, CMD_UNWATCH, strlen(CMD_UNWATCH)) == 0) {
+            strncmp(input, CMD_UNWATCH, strlen(CMD_UNWATCH)) == 0 ||
+            strncmp(input, CMD_ADD_FRIEND, strlen(CMD_ADD_FRIEND)) == 0 ||
+            strncmp(input, CMD_ACCEPT_FRIEND, strlen(CMD_ACCEPT_FRIEND)) == 0 ||
+            strncmp(input, CMD_REFUSE_FRIEND, strlen(CMD_REFUSE_FRIEND)) == 0 ||
+            strncmp(input, CMD_PRIVATE, strlen(CMD_PRIVATE)) == 0 ||
+            strcmp(input, CMD_FRIENDS) == 0) {
         return 1;
     }
     return 0;

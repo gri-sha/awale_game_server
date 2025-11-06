@@ -57,6 +57,7 @@
 #define MAX_CHALLENGES 512
 #define MAX_NOTIFS 512
 #define MAX_MATCHES 128
+#define MAX_FRIENDS 128
 // buffer size (max message size)
 #define BUF_SIZE 1024
 

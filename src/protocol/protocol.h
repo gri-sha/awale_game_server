@@ -40,7 +40,10 @@ typedef enum {
     MSG_BIO_SET = 10,
     MSG_BIO_INFO = 11,
     MSG_PRIVATE_CHAT = 12,
-    MSG_MATCH_LIST = 13
+    MSG_MATCH_LIST = 13,
+    MSG_FRIEND_REQUEST = 14,
+    MSG_FRIEND_RESPONSE = 15,
+    MSG_FRIEND_LIST = 16
 } MessageType;
 
 /* CLIENT COMMANDS - Client to Server requests */
@@ -58,6 +61,11 @@ typedef enum {
 #define CMD_QUIT "quit"
 #define CMD_GAMES "games"
 #define CMD_UNWATCH "unwatch"
+#define CMD_ADD_FRIEND "addfriend"
+#define CMD_ACCEPT_FRIEND "acceptfriend"
+#define CMD_REFUSE_FRIEND "refusefriend"
+#define CMD_PRIVATE "private"
+#define CMD_FRIENDS "friends"
 
 /* Create a formatted message from type and payload */
 void protocol_create_message(char *buffer, size_t buf_size, MessageType type, const char *payload);
