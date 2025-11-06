@@ -363,6 +363,28 @@ void process_command(int sock, const char *input)
     {
         write_to_server(sock, CMD_GAMES);
     }
+    else if (strcmp(command, CMD_WATCH) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: watch <matchId>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char watch_cmd[BUF_SIZE];
+        snprintf(watch_cmd, BUF_SIZE, "%s %s", CMD_WATCH, args);
+        write_to_server(sock, watch_cmd);
+    }
+    else if (strcmp(command, CMD_UNWATCH) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: unwatch <matchId>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char unwatch_cmd[BUF_SIZE];
+        snprintf(unwatch_cmd, BUF_SIZE, "%s %s", CMD_UNWATCH, args);
+        write_to_server(sock, unwatch_cmd);
+    }
     else if (strcmp(command, CMD_PM) == 0)
     {
         if (args == NULL || strlen(args) == 0 || strchr(args, ' ') == NULL)
@@ -389,6 +411,8 @@ void process_command(int sock, const char *input)
         printf("    move <pit>         - Make a move (in game)\n");
         printf("    quit               - Quit current game\n");
         printf("    games              - List running games\n");
+        printf("    watch <id>         - Spectate a running game\n");
+        printf("    unwatch <id>       - Stop spectating a game\n");
         printf("    help               - Show this help message\n");
     }
     else

@@ -19,6 +19,8 @@ typedef struct {
    int player1_index; // index in clients array
    int player2_index; // index in clients array
    Board board;
+   int watchers[MAX_CLIENTS]; // sockets of watchers
+   int watcher_count;
 } Match;
 
 static Match matches[MAX_MATCHES];
@@ -48,6 +50,9 @@ static void broadcast_board(Match *m, Client *clients) {
    protocol_create_message(msg, sizeof(msg), MSG_BOARD_UPDATE, board_txt);
    write_client(clients[m->player1_index].sock, msg);
    write_client(clients[m->player2_index].sock, msg);
+   for (int i = 0; i < m->watcher_count; i++) {
+      write_client(m->watchers[i], msg);
+   }
 }
 
 static void end_match(Match *m, Client *clients) {
@@ -58,6 +63,18 @@ static void end_match(Match *m, Client *clients) {
    clients[m->player2_index].current_match = -1;
    clients[m->player1_index].is_turn = 0;
    clients[m->player2_index].is_turn = 0;
+   // Notify watchers about game over with final score
+   char payload[BUF_SIZE];
+   const char *winner = NULL;
+   if (m->board.score[0] > m->board.score[1]) winner = clients[m->player1_index].name;
+   else if (m->board.score[1] > m->board.score[0]) winner = clients[m->player2_index].name;
+   if (winner) snprintf(payload, sizeof(payload), "Game over. Winner: %s (%d-%d)", winner, m->board.score[0], m->board.score[1]);
+   else snprintf(payload, sizeof(payload), "Game over. Draw (%d-%d)", m->board.score[0], m->board.score[1]);
+   char msg[BUF_SIZE];
+   protocol_create_message(msg, sizeof(msg), MSG_GAME_OVER, payload);
+   for (int i = 0; i < m->watcher_count; i++) {
+      write_client(m->watchers[i], msg);
+   }
 }
 
 static Match* start_match(Client *clients, int a, int b) {
@@ -67,6 +84,7 @@ static Match* start_match(Client *clients, int a, int b) {
    m->player1_index = a;
    m->player2_index = b;
    init_board(&m->board);
+   m->watcher_count = 0;
    clients[a].status = CLIENT_IN_MATCH;
    clients[b].status = CLIENT_IN_MATCH;
    clients[a].current_match = m->id;
@@ -252,6 +270,12 @@ void app(void)
                   }
                   else if (strcmp(command, CMD_GAMES) == 0) {
                      handle_games_command(clients[i].sock, clients, actual);
+                  }
+                  else if (strcmp(command, CMD_WATCH) == 0) {
+                     handle_watch_command(clients[i].sock, clients, i, actual, args);
+                  }
+                  else if (strcmp(command, CMD_UNWATCH) == 0) {
+                     handle_unwatch_command(clients[i].sock, clients, i, actual, args);
                   }
                   else if (strcmp(command, CMD_CHALLENGE) == 0) {
                      handle_challenge_command(clients[i].sock, clients, i, actual, args);
@@ -833,6 +857,10 @@ void handle_move_command(int sock, Client *clients, int client_index, int actual
    // notify move
    notify(clients[m->player1_index].sock, MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
    notify(clients[m->player2_index].sock, MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
+   // notify watchers too
+   for (int w = 0; w < m->watcher_count; w++) {
+      notify(m->watchers[w], MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
+   }
    broadcast_board(m, clients);
    if (is_game_over(&m->board)) {
       // announce winner
@@ -860,7 +888,83 @@ void handle_quit_command(int sock, Client *clients, int client_index, int actual
    int other = (client_index == m->player1_index) ? m->player2_index : m->player1_index;
    notify(clients[other].sock, MSG_GAME_OVER, "%s quit the game", clients[client_index].name);
    notify(sock, MSG_GAME_OVER, "You quit the game");
+   // inform watchers
+   char msg_quit[BUF_SIZE];
+   char payload_quit[BUF_SIZE];
+   snprintf(payload_quit, sizeof(payload_quit), "%s quit the game", clients[client_index].name);
+   protocol_create_message(msg_quit, sizeof(msg_quit), MSG_GAME_OVER, payload_quit);
+   for (int w = 0; w < m->watcher_count; w++) {
+      write_client(m->watchers[w], msg_quit);
+   }
    end_match(m, clients);
+}
+
+void handle_watch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str)
+{
+   (void)actual; // unused directly
+   if (!match_id_str || strlen(match_id_str) == 0) {
+      notify(sock, MSG_ERROR, "Usage: watch <matchId>");
+      return;
+   }
+   int id = atoi(match_id_str);
+   if (id < 0 || id >= match_count) {
+      notify(sock, MSG_ERROR, "Match %d not found", id);
+      return;
+   }
+   Match *m = &matches[id];
+   // Disallow watching own match (already receiving updates)
+   if (clients[client_index].current_match == id && clients[client_index].status == CLIENT_IN_MATCH) {
+      notify(sock, MSG_ERROR, "You are already playing in this match");
+      return;
+   }
+   // Add watcher if not already
+   for (int i = 0; i < m->watcher_count; i++) {
+      if (m->watchers[i] == clients[client_index].sock) {
+         // already watching
+         broadcast_board(m, clients); // resend board
+         return;
+      }
+   }
+   if (m->watcher_count >= MAX_CLIENTS) {
+      notify(sock, MSG_ERROR, "Too many watchers for this match");
+      return;
+   }
+   m->watchers[m->watcher_count++] = clients[client_index].sock;
+   notify(sock, MSG_INFO, "Watching match #%d (%s vs %s)", m->id, clients[m->player1_index].name, clients[m->player2_index].name);
+   broadcast_board(m, clients);
+}
+
+void handle_unwatch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str)
+{
+   (void)actual; // unused directly
+   if (!match_id_str || strlen(match_id_str) == 0) {
+      notify(sock, MSG_ERROR, "Usage: unwatch <matchId>");
+      return;
+   }
+   int id = atoi(match_id_str);
+   if (id < 0 || id >= match_count) {
+      notify(sock, MSG_ERROR, "Match %d not found", id);
+      return;
+   }
+   Match *m = &matches[id];
+   int sock_to_remove = clients[client_index].sock;
+   int found = 0;
+   for (int i = 0; i < m->watcher_count; i++) {
+      if (m->watchers[i] == sock_to_remove) {
+         // remove by shifting remaining
+         for (int j = i; j < m->watcher_count - 1; j++) {
+            m->watchers[j] = m->watchers[j+1];
+         }
+         m->watcher_count--;
+         found = 1;
+         break;
+      }
+   }
+   if (!found) {
+      notify(sock, MSG_ERROR, "You are not watching match %d", id);
+      return;
+   }
+   notify(sock, MSG_INFO, "Stopped watching match #%d", id);
 }
 
 void handle_games_command(int sock, Client *clients, int actual)

@@ -46,5 +46,7 @@ void handle_cancel_command(int sock, Client *clients, int client_index, int actu
 void handle_move_command(int sock, Client *clients, int client_index, int actual, const char *pit_str);
 void handle_quit_command(int sock, Client *clients, int client_index, int actual);
 void handle_games_command(int sock, Client *clients, int actual);
+void handle_watch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str);
+void handle_unwatch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str);
 
 #endif /* guard */

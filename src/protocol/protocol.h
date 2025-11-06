@@ -57,6 +57,7 @@ typedef enum {
 #define CMD_CANCEL "cancel"
 #define CMD_QUIT "quit"
 #define CMD_GAMES "games"
+#define CMD_UNWATCH "unwatch"
 
 /* Create a formatted message from type and payload */
 void protocol_create_message(char *buffer, size_t buf_size, MessageType type, const char *payload);
