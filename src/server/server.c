@@ -366,11 +366,9 @@ void handle_list_command(int sock, Client *clients, int actual)
          strncat(user_list, "\n", BUF_SIZE - strlen(user_list) - 1);
       }
    }
-   printf("%s\n", user_list);
    /* Send user list to sender */
    char response[BUF_SIZE];
    protocol_create_message(response, BUF_SIZE, MSG_LIST_USERS, user_list);
-   printf("\n%s\n", response);
    write_client(sock, response);
    
    printf("%s[list]%s Sent user list to client\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET);
