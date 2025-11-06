@@ -53,7 +53,9 @@ int protocol_is_command(const char *input)
         strncmp(input, CMD_SET_BIO, strlen(CMD_SET_BIO)) == 0 ||
         strncmp(input, CMD_GET_BIO, strlen(CMD_GET_BIO)) == 0 ||
         strncmp(input, CMD_PM, strlen(CMD_PM)) == 0 ||
-        strcmp(input, CMD_GAMES) == 0) {
+        strcmp(input, CMD_GAMES) == 0 ||
+            strncmp(input, CMD_WATCH, strlen(CMD_WATCH)) == 0 ||
+            strncmp(input, CMD_UNWATCH, strlen(CMD_UNWATCH)) == 0) {
         return 1;
     }
     return 0;
