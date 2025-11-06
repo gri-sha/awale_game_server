@@ -120,6 +120,9 @@ void app(const char *address, const char *name)
                 case MSG_BIO_SET:
                     printf("%s[bio]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
                     break;
+                case MSG_BIO_INFO:
+                    printf("%s[bio]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
+                    break;
                 case MSG_ERROR:
                     printf("%s[error]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
                     break;
@@ -264,6 +267,18 @@ void process_command(int sock, const char *input)
         char bio_cmd[BUF_SIZE];
         snprintf(bio_cmd, BUF_SIZE, "%s %s", CMD_SET_BIO, args);
         write_to_server(sock, bio_cmd);
+    }
+    else if (strcmp(command, CMD_GET_BIO) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: getbio <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        /* Format and send getbio command to server */
+        char getbio_cmd[BUF_SIZE];
+        snprintf(getbio_cmd, BUF_SIZE, "%s %s", CMD_GET_BIO, args);
+        write_to_server(sock, getbio_cmd);
     }
     else if (strcmp(command, "help") == 0)
     {
