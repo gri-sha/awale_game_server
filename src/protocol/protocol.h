@@ -52,6 +52,8 @@ typedef enum {
 #define CMD_SET_BIO "bio"
 #define CMD_GET_BIO "getbio"
 #define CMD_PM "pm"
+#define CMD_CANCEL "cancel"
+#define CMD_QUIT "quit"
 
 /* Create a formatted message from type and payload */
 void protocol_create_message(char *buffer, size_t buf_size, MessageType type, const char *payload);

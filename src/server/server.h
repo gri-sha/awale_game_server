@@ -15,6 +15,10 @@ typedef struct
    char bio[MAX_BIO_LEN];
    ClientStatus status;        // CLIENT_IDLE, CLIENT_WAITING_FOR_ACCEPT, CLIENT_IN_MATCH
    int current_match; // match id, -1 if not in a match
+   // Challenge state
+   char pending_challenge_to[MAX_USERNAME_LEN];      // username we challenged (if any)
+   char pending_challenge_from[MAX_USERNAME_LEN];    // username who challenged us (if any)
+   int is_turn; // for in-game: 1 if it's this client's turn, else 0
 } Client;
 
 void init(void);
@@ -34,5 +38,12 @@ void handle_bio_command(int sock, Client *clients, int client_index, const char 
 void handle_getbio_command(int sock, Client *clients, int actual, const char *username);
 void handle_pm_command(int sock, Client *clients, Client sender, int actual, const char *args);
 int is_username_unique(Client *clients, int actual, const char *username);
+/* Challenge & Game handlers */
+void handle_challenge_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
+void handle_accept_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
+void handle_refuse_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
+void handle_cancel_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
+void handle_move_command(int sock, Client *clients, int client_index, int actual, const char *pit_str);
+void handle_quit_command(int sock, Client *clients, int client_index, int actual);
 
 #endif /* guard */
