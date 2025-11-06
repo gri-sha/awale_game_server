@@ -169,6 +169,9 @@ void app(void)
                   else if (strcmp(command, CMD_GET_BIO) == 0) {
                      handle_getbio_command(clients[i].sock, clients, actual, args);
                   }
+                  else if (strcmp(command, CMD_PM) == 0) {
+                     handle_pm_command(clients[i].sock, clients, client, actual, args);
+                  }
                   else {
                      /* Unknown command or regular message */
                      handle_message_command(clients[i].sock, clients, client, actual, buffer);
@@ -494,4 +497,95 @@ void handle_getbio_command(int sock, Client *clients, int actual, const char *us
    char response[BUF_SIZE];
    protocol_create_message(response, BUF_SIZE, MSG_BIO_INFO, payload);
    write_client(sock, response);
+}
+
+void handle_pm_command(int sock, Client *clients, Client sender, int actual, const char *args)
+{
+   /* Validate args: expect "<username> <message>" */
+   if (args == NULL || strlen(args) == 0)
+   {
+      char error_msg[BUF_SIZE];
+      protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, "Usage: pm <username> <message>");
+      write_client(sock, error_msg);
+      return;
+   }
+
+   char target[MAX_USERNAME_LEN];
+   char message[BUF_SIZE];
+   target[0] = 0;
+   message[0] = 0;
+
+   /* Split first token (username) and the rest (message) */
+   const char *space = strchr(args, ' ');
+   if (space == NULL)
+   {
+      char error_msg[BUF_SIZE];
+      protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, "Usage: pm <username> <message>");
+      write_client(sock, error_msg);
+      return;
+   }
+   size_t uname_len = (size_t)(space - args);
+   if (uname_len == 0 || uname_len >= MAX_USERNAME_LEN)
+   {
+      char error_msg[BUF_SIZE];
+      protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, "Invalid username");
+      write_client(sock, error_msg);
+      return;
+   }
+   strncpy(target, args, uname_len);
+   target[uname_len] = '\0';
+   strncpy(message, space + 1, BUF_SIZE - 1);
+   message[BUF_SIZE - 1] = '\0';
+
+   if (strlen(message) == 0)
+   {
+      char error_msg[BUF_SIZE];
+      protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, "Message cannot be empty");
+      write_client(sock, error_msg);
+      return;
+   }
+
+   if (strcmp(target, sender.name) == 0)
+   {
+      char error_msg[BUF_SIZE];
+      protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, "Cannot send PM to yourself");
+      write_client(sock, error_msg);
+      return;
+   }
+
+   /* Find target client */
+   int target_index = -1;
+   for (int i = 0; i < actual; i++)
+   {
+      if (strcmp(clients[i].name, target) == 0)
+      {
+         target_index = i;
+         break;
+      }
+   }
+
+   if (target_index == -1)
+   {
+      char error_buf[BUF_SIZE];
+      char tmp[BUF_SIZE];
+      snprintf(tmp, BUF_SIZE, "User '%s' not found", target);
+      protocol_create_message(error_buf, BUF_SIZE, MSG_ERROR, tmp);
+      write_client(sock, error_buf);
+      return;
+   }
+
+   /* Build outgoing messages */
+   char to_target_payload[BUF_SIZE];
+   snprintf(to_target_payload, BUF_SIZE, "%s -> you: %s", sender.name, message);
+   char to_sender_payload[BUF_SIZE];
+   snprintf(to_sender_payload, BUF_SIZE, "you -> %s: %s", target, message);
+
+   char to_target_msg[BUF_SIZE];
+   protocol_create_message(to_target_msg, BUF_SIZE, MSG_PRIVATE_CHAT, to_target_payload);
+   char to_sender_msg[BUF_SIZE];
+   protocol_create_message(to_sender_msg, BUF_SIZE, MSG_PRIVATE_CHAT, to_sender_payload);
+
+   /* Send to target and confirmation to sender */
+   write_client(clients[target_index].sock, to_target_msg);
+   write_client(sock, to_sender_msg);
 }

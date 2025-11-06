@@ -32,6 +32,7 @@ void handle_list_command(int sock, Client *clients, int actual);
 void handle_message_command(int sock, Client *clients, Client sender, int actual, const char *message);
 void handle_bio_command(int sock, Client *clients, int client_index, const char *bio_text);
 void handle_getbio_command(int sock, Client *clients, int actual, const char *username);
+void handle_pm_command(int sock, Client *clients, Client sender, int actual, const char *args);
 int is_username_unique(Client *clients, int actual, const char *username);
 
 #endif /* guard */

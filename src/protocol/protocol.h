@@ -21,6 +21,7 @@
  *  "accept alice"             → accept a challenge
  *  "bio my bio text"          → set bio
  *  "getbio alice"             → get user's bio
+ *  "pm alice hello"           → private message to a user
  */
 
 /* MESSAGE TYPES - Server to Client responses */
@@ -36,7 +37,8 @@ typedef enum {
     MSG_ERROR = 8,
     MSG_INFO = 9,
     MSG_BIO_SET = 10,
-    MSG_BIO_INFO = 11
+    MSG_BIO_INFO = 11,
+    MSG_PRIVATE_CHAT = 12
 } MessageType;
 
 /* CLIENT COMMANDS - Client to Server requests */
@@ -49,6 +51,7 @@ typedef enum {
 #define CMD_WATCH "watch"
 #define CMD_SET_BIO "bio"
 #define CMD_GET_BIO "getbio"
+#define CMD_PM "pm"
 
 /* Create a formatted message from type and payload */
 void protocol_create_message(char *buffer, size_t buf_size, MessageType type, const char *payload);
