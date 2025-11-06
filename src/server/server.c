@@ -250,6 +250,9 @@ void app(void)
                   else if (strcmp(command, CMD_PM) == 0) {
                      handle_pm_command(clients[i].sock, clients, client, actual, args);
                   }
+                  else if (strcmp(command, CMD_GAMES) == 0) {
+                     handle_games_command(clients[i].sock, clients, actual);
+                  }
                   else if (strcmp(command, CMD_CHALLENGE) == 0) {
                      handle_challenge_command(clients[i].sock, clients, i, actual, args);
                   }
@@ -858,4 +861,32 @@ void handle_quit_command(int sock, Client *clients, int client_index, int actual
    notify(clients[other].sock, MSG_GAME_OVER, "%s quit the game", clients[client_index].name);
    notify(sock, MSG_GAME_OVER, "You quit the game");
    end_match(m, clients);
+}
+
+void handle_games_command(int sock, Client *clients, int actual)
+{
+   (void)clients; // not needed directly, we reference via matches
+   char list[BUF_SIZE];
+   list[0] = '\0';
+   if (match_count == 0) {
+      protocol_create_message(list, BUF_SIZE, MSG_MATCH_LIST, "No games running");
+      write_client(sock, list);
+      return;
+   }
+   // Build a multi-line list: one game per line
+   char payload[BUF_SIZE];
+   payload[0] = '\0';
+   for (int i = 0; i < match_count; i++)
+   {
+      Match *m = &matches[i];
+      // Determine whose turn
+      const char *p1 = clients[m->player1_index].name;
+      const char *p2 = clients[m->player2_index].name;
+      const char *turn = (m->board.current_player == 0) ? p1 : p2;
+      char line[256];
+      snprintf(line, sizeof(line), "#%d %s vs %s | turn: %s\n", m->id, p1, p2, turn);
+      strncat(payload, line, sizeof(payload) - strlen(payload) - 1);
+   }
+   protocol_create_message(list, BUF_SIZE, MSG_MATCH_LIST, payload);
+   write_client(sock, list);
 }
