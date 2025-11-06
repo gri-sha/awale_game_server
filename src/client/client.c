@@ -114,8 +114,8 @@ void app(const char *address, const char *name)
                     printf("%s[chat]%s %s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
                     break;
                 case MSG_LIST_USERS:
-                    printf("\n%s", payload);
-                    // printf("%s[users]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    printf("%s[users]%s\n%s\n\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    fflush(stdout); // Force flush to terminal
                     break;
                 case MSG_BIO_SET:
                     printf("%s[bio]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
@@ -177,7 +177,6 @@ void end_connection(int sock)
 
 int read_from_server(int sock, char *buffer)
 {
-    printf("Trying to read from server...\n");
     size_t len = 0;
 
     /* Receive message length */
