@@ -24,6 +24,7 @@ typedef struct
    int friend_count;
    char pending_friend_to[MAX_USERNAME_LEN];
    char pending_friend_from[MAX_USERNAME_LEN];
+   int wins; // number of games won (session)
 } Client;
 
 void init(void);
@@ -58,5 +59,7 @@ void handle_acceptfriend_command(int sock, Client *clients, int client_index, in
 void handle_refusefriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name);
 void handle_private_command(int sock, Client *clients, int client_index, int actual, const char *arg);
 void handle_friends_command(int sock, Client *clients, int client_index, int actual);
+void handle_ranking_command(int sock, Client *clients, int actual);
+void handle_watchreplay_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str);
 
 #endif /* guard */

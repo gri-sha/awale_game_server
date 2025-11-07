@@ -150,6 +150,14 @@ void app(const char *address, const char *name)
                 case MSG_FRIEND_LIST:
                     printf("%s[friends]%s %s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
                     break;
+                case MSG_RANK_LIST:
+                    printf("%s[ranking]%s\n%s", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    break;
+                case MSG_REPLAY_DATA:
+                    printf("%s[replay]%s\n%s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
+                    fflush(stdout);
+                    sleep(5); // pace replay steps by 5 seconds between frames
+                    break;
                 case MSG_GAME_OVER:
                     printf("%s[game]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
                     break;
@@ -445,6 +453,21 @@ void process_command(int sock, const char *input)
     {
         write_to_server(sock, CMD_FRIENDS);
     }
+    else if (strcmp(command, CMD_RANKING) == 0)
+    {
+        write_to_server(sock, CMD_RANKING);
+    }
+    else if (strcmp(command, CMD_WATCH_REPLAY) == 0)
+    {
+        if (args == NULL || strlen(args) == 0)
+        {
+            printf("%s[error]%s Usage: watchreplay <matchId>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            return;
+        }
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_WATCH_REPLAY, args);
+        write_to_server(sock, cmd);
+    }
     else if (strcmp(command, "help") == 0)
     {
         printf("%s[help]%s Available commands:\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET);
@@ -462,11 +485,13 @@ void process_command(int sock, const char *input)
         printf("    games              - List running games\n");
         printf("    watch <id>         - Spectate a running game\n");
         printf("    unwatch <id>       - Stop spectating a game\n");
+    printf("    watchreplay <id>   - Watch a finished game's replay (5s per move)\n");
         printf("    addfriend <user>   - Send friend request\n");
         printf("    acceptfriend <u>   - Accept friend request\n");
         printf("    refusefriend <u>   - Refuse friend request\n");
         printf("    private on|off     - Toggle match privacy (only friends watch)\n");
         printf("    friends            - Show your friend list\n");
+        printf("    ranking            - Show ranking by wins\n");
         printf("    help               - Show this help message\n");
     }
     else

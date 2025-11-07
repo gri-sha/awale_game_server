@@ -1,7 +1,7 @@
 # Makefile for Awale Game
 
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -Isrc -DDEBUG
+CFLAGS = -Wall -Wextra -std=c99 -Isrc 
 
 # Source files
 CORE_SRC = src/core/awale.c

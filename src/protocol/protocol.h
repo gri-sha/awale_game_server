@@ -44,6 +44,8 @@ typedef enum {
     MSG_FRIEND_REQUEST = 14,
     MSG_FRIEND_RESPONSE = 15,
     MSG_FRIEND_LIST = 16
+    , MSG_RANK_LIST = 17
+    , MSG_REPLAY_DATA = 18
 } MessageType;
 
 /* CLIENT COMMANDS - Client to Server requests */
@@ -66,6 +68,8 @@ typedef enum {
 #define CMD_REFUSE_FRIEND "refusefriend"
 #define CMD_PRIVATE "private"
 #define CMD_FRIENDS "friends"
+#define CMD_RANKING "ranking"
+#define CMD_WATCH_REPLAY "watchreplay"
 
 /* Create a formatted message from type and payload */
 void protocol_create_message(char *buffer, size_t buf_size, MessageType type, const char *payload);

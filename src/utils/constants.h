@@ -58,6 +58,9 @@
 #define MAX_NOTIFS 512
 #define MAX_MATCHES 128
 #define MAX_FRIENDS 128
+// replays
+#define MAX_REPLAYS 256
+#define MAX_MOVES 512
 // buffer size (max message size)
 #define BUF_SIZE 1024
 

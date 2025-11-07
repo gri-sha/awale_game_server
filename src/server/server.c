@@ -22,6 +22,9 @@ typedef struct {
    int watchers[MAX_CLIENTS]; // sockets of watchers
    int watcher_count;
    int private_mode; // if 1 only friends can watch
+   // replay data
+   int replay_move_count;
+   char replay_boards[MAX_MOVES][BUF_SIZE]; // board snapshot after each move
 } Match;
 
 static Match matches[MAX_MATCHES];
@@ -63,12 +66,29 @@ static void notify(int sock, MessageType type, const char *fmt, ...) {
 static void broadcast_board(Match *m, Client *clients) {
    char board_txt[BUF_SIZE];
    render_board(&m->board, board_txt, sizeof(board_txt));
-   char msg[BUF_SIZE];
-   protocol_create_message(msg, sizeof(msg), MSG_BOARD_UPDATE, board_txt);
-   write_client(clients[m->player1_index].sock, msg);
-   write_client(clients[m->player2_index].sock, msg);
+   // Append turn info for each recipient individually (players see 'Your turn')
+   int p1_turn = (m->board.current_player == 0);
+   int p2_turn = (m->board.current_player == 1);
+   // Player 1 message
+   char payload_p1[BUF_SIZE];
+   snprintf(payload_p1, sizeof(payload_p1), "%s\n%s", board_txt, p1_turn ? "Your turn" : "Waiting...");
+   char msg_p1[BUF_SIZE];
+   protocol_create_message(msg_p1, sizeof(msg_p1), MSG_BOARD_UPDATE, payload_p1);
+   write_client(clients[m->player1_index].sock, msg_p1);
+   // Player 2 message
+   char payload_p2[BUF_SIZE];
+   snprintf(payload_p2, sizeof(payload_p2), "%s\n%s", board_txt, p2_turn ? "Your turn" : "Waiting...");
+   char msg_p2[BUF_SIZE];
+   protocol_create_message(msg_p2, sizeof(msg_p2), MSG_BOARD_UPDATE, payload_p2);
+   write_client(clients[m->player2_index].sock, msg_p2);
+   // Watchers: indicate whose turn
+   const char *turn_name = p1_turn ? clients[m->player1_index].name : clients[m->player2_index].name;
+   char payload_w[BUF_SIZE];
+   snprintf(payload_w, sizeof(payload_w), "%s\nTurn: %s", board_txt, turn_name);
+   char msg_w[BUF_SIZE];
+   protocol_create_message(msg_w, sizeof(msg_w), MSG_BOARD_UPDATE, payload_w);
    for (int i = 0; i < m->watcher_count; i++) {
-      write_client(m->watchers[i], msg);
+      write_client(m->watchers[i], msg_w);
    }
 }
 
@@ -103,6 +123,7 @@ static Match* start_match(Client *clients, int a, int b) {
    init_board(&m->board);
    m->watcher_count = 0;
    m->private_mode = 0;
+   m->replay_move_count = 0;
    clients[a].status = CLIENT_IN_MATCH;
    clients[b].status = CLIENT_IN_MATCH;
    clients[a].current_match = m->id;
@@ -121,6 +142,14 @@ static Match* start_match(Client *clients, int a, int b) {
    notify(clients[a].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[b].name, clients[a].is_turn?"You":"Opponent");
    notify(clients[b].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[a].name, clients[b].is_turn?"You":"Opponent");
    broadcast_board(m, clients);
+   // store initial board snapshot for replay (before any move)
+   if (m->replay_move_count < MAX_MOVES) {
+      char snap[BUF_SIZE];
+      render_board(&m->board, snap, sizeof(snap));
+      strncpy(m->replay_boards[m->replay_move_count], snap, BUF_SIZE-1);
+      m->replay_boards[m->replay_move_count][BUF_SIZE-1] = '\0';
+      m->replay_move_count++;
+   }
    match_count++;
    return m;
 }
@@ -229,6 +258,13 @@ void app(void)
          c.status = CLIENT_IDLE;
          c.current_match = -1;
          memset(c.bio, 0, MAX_BIO_LEN);
+         c.pending_challenge_to[0] = '\0';
+         c.pending_challenge_from[0] = '\0';
+         c.is_turn = 0;
+         c.friend_count = 0;
+         c.pending_friend_to[0] = '\0';
+         c.pending_friend_from[0] = '\0';
+         c.wins = 0;
          clients[actual] = c;
          actual++;
 
@@ -309,6 +345,12 @@ void app(void)
                   }
                   else if (strcmp(command, CMD_FRIENDS) == 0) {
                      handle_friends_command(clients[i].sock, clients, i, actual);
+                  }
+                  else if (strcmp(command, CMD_RANKING) == 0) {
+                     handle_ranking_command(clients[i].sock, clients, actual);
+                  }
+                  else if (strcmp(command, CMD_WATCH_REPLAY) == 0) {
+                     handle_watchreplay_command(clients[i].sock, clients, i, actual, args);
                   }
                   else if (strcmp(command, CMD_CHALLENGE) == 0) {
                      handle_challenge_command(clients[i].sock, clients, i, actual, args);
@@ -895,6 +937,19 @@ void handle_move_command(int sock, Client *clients, int client_index, int actual
       notify(m->watchers[w], MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
    }
    broadcast_board(m, clients);
+   // record board after move for replay
+   if (m->replay_move_count < MAX_MOVES) {
+      char snap[BUF_SIZE];
+      char move_info[64];
+      snprintf(move_info, sizeof(move_info), "(move by %s pit %d)", clients[client_index].name, pit);
+      render_board(&m->board, snap, sizeof(snap));
+      // prepend move info line
+      char combined[BUF_SIZE];
+      snprintf(combined, sizeof(combined), "%s\n%s", move_info, snap);
+      strncpy(m->replay_boards[m->replay_move_count], combined, BUF_SIZE-1);
+      m->replay_boards[m->replay_move_count][BUF_SIZE-1] = '\0';
+      m->replay_move_count++;
+   }
    if (is_game_over(&m->board)) {
       // announce winner
       const char *winner = NULL;
@@ -905,6 +960,12 @@ void handle_move_command(int sock, Client *clients, int client_index, int actual
       else snprintf(payload, sizeof(payload), "Game over. Draw (%d-%d)", m->board.score[0], m->board.score[1]);
       notify(clients[m->player1_index].sock, MSG_GAME_OVER, "%s", payload);
       notify(clients[m->player2_index].sock, MSG_GAME_OVER, "%s", payload);
+      // update wins count
+      if (m->board.score[0] > m->board.score[1]) {
+         clients[m->player1_index].wins++;
+      } else if (m->board.score[1] > m->board.score[0]) {
+         clients[m->player2_index].wins++;
+      }
       end_match(m, clients);
    }
 }
@@ -921,6 +982,8 @@ void handle_quit_command(int sock, Client *clients, int client_index, int actual
    int other = (client_index == m->player1_index) ? m->player2_index : m->player1_index;
    notify(clients[other].sock, MSG_GAME_OVER, "%s quit the game", clients[client_index].name);
    notify(sock, MSG_GAME_OVER, "You quit the game");
+   // count as win for the other player
+   clients[other].wins++;
    // inform watchers
    char msg_quit[BUF_SIZE];
    char payload_quit[BUF_SIZE];
@@ -1108,6 +1171,61 @@ void handle_friends_command(int sock, Client *clients, int client_index, int act
    char msg[BUF_SIZE];
    protocol_create_message(msg, sizeof(msg), MSG_FRIEND_LIST, payload);
    write_client(sock, msg);
+}
+
+void handle_ranking_command(int sock, Client *clients, int actual)
+{
+   int idx[MAX_CLIENTS];
+   for (int i = 0; i < actual; i++) idx[i] = i;
+   // simple selection sort by wins desc, then name asc
+   for (int i = 0; i < actual; i++) {
+      int best = i;
+      for (int j = i + 1; j < actual; j++) {
+         if (clients[idx[j]].wins > clients[idx[best]].wins ||
+             (clients[idx[j]].wins == clients[idx[best]].wins && strcmp(clients[idx[j]].name, clients[idx[best]].name) < 0)) {
+            best = j;
+         }
+      }
+      if (best != i) { int tmp = idx[i]; idx[i] = idx[best]; idx[best] = tmp; }
+   }
+   char payload[BUF_SIZE]; payload[0] = '\0';
+   if (actual == 0) {
+      snprintf(payload, sizeof(payload), "(no players)");
+   } else {
+      char line[128];
+      for (int i = 0; i < actual; i++) {
+         snprintf(line, sizeof(line), "%d. %s - %d\n", i+1, clients[idx[i]].name, clients[idx[i]].wins);
+         strncat(payload, line, sizeof(payload)-strlen(payload)-1);
+      }
+   }
+   char msg[BUF_SIZE];
+   protocol_create_message(msg, sizeof(msg), MSG_RANK_LIST, payload);
+   write_client(sock, msg);
+}
+
+void handle_watchreplay_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str)
+{
+   (void)clients; (void)client_index; (void)actual;
+   if (!match_id_str || strlen(match_id_str) == 0) {
+      notify(sock, MSG_ERROR, "Usage: watchreplay <matchId>");
+      return;
+   }
+   int id = atoi(match_id_str);
+   if (id < 0 || id >= match_count) {
+      notify(sock, MSG_ERROR, "Replay %d not found", id);
+      return;
+   }
+   Match *m = &matches[id];
+   if (m->replay_move_count == 0) {
+      notify(sock, MSG_ERROR, "No replay data for match %d", id);
+      return;
+   }
+   notify(sock, MSG_INFO, "Starting replay for match #%d (%s vs %s) moves:%d", m->id, clients[m->player1_index].name, clients[m->player2_index].name, m->replay_move_count-1);
+   for (int i = 0; i < m->replay_move_count; i++) {
+      char msg[BUF_SIZE];
+      protocol_create_message(msg, sizeof(msg), MSG_REPLAY_DATA, m->replay_boards[i]);
+      write_client(sock, msg);
+   }
 }
 
 void handle_games_command(int sock, Client *clients, int actual)

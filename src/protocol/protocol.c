@@ -60,7 +60,9 @@ int protocol_is_command(const char *input)
             strncmp(input, CMD_ACCEPT_FRIEND, strlen(CMD_ACCEPT_FRIEND)) == 0 ||
             strncmp(input, CMD_REFUSE_FRIEND, strlen(CMD_REFUSE_FRIEND)) == 0 ||
             strncmp(input, CMD_PRIVATE, strlen(CMD_PRIVATE)) == 0 ||
-            strcmp(input, CMD_FRIENDS) == 0) {
+            strcmp(input, CMD_FRIENDS) == 0 ||
+            strcmp(input, CMD_RANKING) == 0 ||
+            strncmp(input, CMD_WATCH_REPLAY, strlen(CMD_WATCH_REPLAY)) == 0) {
         return 1;
     }
     return 0;
