@@ -571,14 +571,9 @@ void handle_pm_command(int sock, Client *clients, Client sender, int client_coun
 
 void handle_challenge_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   if (clients[client_index].status != CLIENT_IDLE)
+   if (clients[client_index].status == CLIENT_IN_MATCH)
    {
-      notify(sock, MSG_ERROR, "You can't challenge while in a game or awaiting acceptance");
-      return;
-   }
-   if (clients[client_index].pending_challenge_to[0] != '\0')
-   {
-      notify(sock, MSG_ERROR, "You already have a pending challenge to %s", clients[client_index].pending_challenge_to);
+      notify(sock, MSG_ERROR, "You can't challenge while in a game");
       return;
    }
    if (!target_name || strlen(target_name) == 0)
@@ -591,27 +586,70 @@ void handle_challenge_command(int sock, Client *clients, int client_index, int c
       notify(sock, MSG_ERROR, "You cannot challenge yourself");
       return;
    }
+
+   /* Check if already challenged this user */
+   for (int i = 0; i < clients[client_index].pending_challenge_to_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_to[i], target_name) == 0)
+      {
+         notify(sock, MSG_ERROR, "You already challenged %s", target_name);
+         return;
+      }
+   }
+
+   /* Check if at max pending challenges sent */
+   if (clients[client_index].pending_challenge_to_count >= MAX_CHALLENGES)
+   {
+      notify(sock, MSG_ERROR, "Too many pending challenges");
+      return;
+   }
+
    int t = find_client_index_by_name(clients, client_count, target_name);
    if (t == -1)
    {
       notify(sock, MSG_ERROR, "User '%s' not found", target_name);
       return;
    }
-   if (clients[t].status != CLIENT_IDLE)
+   if (clients[t].status == CLIENT_IN_MATCH)
    {
-      notify(sock, MSG_ERROR, "User '%s' is busy", clients[t].name);
+      notify(sock, MSG_ERROR, "User '%s' is busy in a game", clients[t].name);
       return;
    }
-   if (clients[t].pending_challenge_from[0] != '\0')
+
+   /* Check if target already has pending challenge from this user */
+   for (int i = 0; i < clients[t].pending_challenge_from_count; i++)
    {
-      notify(sock, MSG_ERROR, "User '%s' already has a pending challenge", clients[t].name);
+      if (strcmp(clients[t].pending_challenge_from[i], clients[client_index].name) == 0)
+      {
+         notify(sock, MSG_ERROR, "Challenge already pending to %s", target_name);
+         return;
+      }
+   }
+
+   /* Check if target is at max pending challenges received */
+   if (clients[t].pending_challenge_from_count >= MAX_CHALLENGES)
+   {
+      notify(sock, MSG_ERROR, "User '%s' has too many pending challenges", clients[t].name);
       return;
    }
-   strncpy(clients[client_index].pending_challenge_to, clients[t].name, MAX_USERNAME_LEN - 1);
-   clients[client_index].pending_challenge_to[MAX_USERNAME_LEN - 1] = '\0';
-   strncpy(clients[t].pending_challenge_from, clients[client_index].name, MAX_USERNAME_LEN - 1);
-   clients[t].pending_challenge_from[MAX_USERNAME_LEN - 1] = '\0';
-   clients[client_index].status = CLIENT_WAITING_FOR_ACCEPT;
+
+   /* Add challenge */
+   strncpy(clients[client_index].pending_challenge_to[clients[client_index].pending_challenge_to_count],
+           clients[t].name, MAX_USERNAME_LEN - 1);
+   clients[client_index].pending_challenge_to[clients[client_index].pending_challenge_to_count][MAX_USERNAME_LEN - 1] = '\0';
+   clients[client_index].pending_challenge_to_count++;
+
+   strncpy(clients[t].pending_challenge_from[clients[t].pending_challenge_from_count],
+           clients[client_index].name, MAX_USERNAME_LEN - 1);
+   clients[t].pending_challenge_from[clients[t].pending_challenge_from_count][MAX_USERNAME_LEN - 1] = '\0';
+   clients[t].pending_challenge_from_count++;
+
+   /* Update status only if no other pending challenges or not in match */
+   if (clients[client_index].status == CLIENT_IDLE && clients[client_index].pending_challenge_to_count > 0)
+   {
+      clients[client_index].status = CLIENT_WAITING_FOR_ACCEPT;
+   }
+
    notify(sock, MSG_INFO, "Challenge sent to %s", clients[t].name);
    notify(clients[t].sock, MSG_CHALLENGE, "from %s", clients[client_index].name);
 }
@@ -619,73 +657,288 @@ void handle_challenge_command(int sock, Client *clients, int client_index, int c
 void handle_cancel_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
    (void)client_count; // unused
-   if (clients[client_index].pending_challenge_to[0] == '\0')
+   if (clients[client_index].pending_challenge_to_count == 0)
    {
-      notify(sock, MSG_ERROR, "No pending challenge to cancel");
+      notify(sock, MSG_ERROR, "No pending challenges to cancel");
       return;
    }
-   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_to) != 0)
+   if (!target_name || strlen(target_name) == 0)
    {
-      notify(sock, MSG_ERROR, "Your pending challenge is to %s", clients[client_index].pending_challenge_to);
+      notify(sock, MSG_ERROR, "Usage: cancel <username>");
       return;
    }
-   int t = find_client_index_by_name(clients, client_count, clients[client_index].pending_challenge_to);
+
+   /* Find the challenge to this target */
+   int found_idx = -1;
+   for (int i = 0; i < clients[client_index].pending_challenge_to_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_to[i], target_name) == 0)
+      {
+         found_idx = i;
+         break;
+      }
+   }
+
+   if (found_idx == -1)
+   {
+      notify(sock, MSG_ERROR, "No pending challenge to %s", target_name);
+      return;
+   }
+
+   /* Find target user */
+   int t = find_client_index_by_name(clients, client_count, target_name);
    if (t != -1)
    {
+      /* Remove from target's pending_challenge_from */
+      for (int i = 0; i < clients[t].pending_challenge_from_count; i++)
+      {
+         if (strcmp(clients[t].pending_challenge_from[i], clients[client_index].name) == 0)
+         {
+            /* Shift remaining elements */
+            for (int j = i; j < clients[t].pending_challenge_from_count - 1; j++)
+            {
+               strncpy(clients[t].pending_challenge_from[j],
+                       clients[t].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+            }
+            clients[t].pending_challenge_from_count--;
+            break;
+         }
+      }
       notify(clients[t].sock, MSG_CHALLENGE_RESPONSE, "%s cancelled the challenge", clients[client_index].name);
-      clients[t].pending_challenge_from[0] = '\0';
    }
-   clients[client_index].pending_challenge_to[0] = '\0';
-   clients[client_index].status = CLIENT_IDLE;
-   notify(sock, MSG_INFO, "Challenge cancelled");
+
+   /* Remove from sender's pending_challenge_to */
+   for (int j = found_idx; j < clients[client_index].pending_challenge_to_count - 1; j++)
+   {
+      strncpy(clients[client_index].pending_challenge_to[j],
+              clients[client_index].pending_challenge_to[j + 1], MAX_USERNAME_LEN - 1);
+   }
+   clients[client_index].pending_challenge_to_count--;
+
+   /* Update status: if no more pending challenges and not in match, go back to IDLE */
+   if (clients[client_index].pending_challenge_to_count == 0 && clients[client_index].status == CLIENT_WAITING_FOR_ACCEPT)
+   {
+      clients[client_index].status = CLIENT_IDLE;
+   }
+
+   notify(sock, MSG_INFO, "Challenge to %s cancelled", target_name);
 }
 
 void handle_refuse_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   if (clients[client_index].pending_challenge_from[0] == '\0')
+   if (clients[client_index].pending_challenge_from_count == 0)
    {
-      notify(sock, MSG_ERROR, "You have no incoming challenge");
+      notify(sock, MSG_ERROR, "You have no incoming challenges");
       return;
    }
-   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_from) != 0)
+   if (!target_name || strlen(target_name) == 0)
    {
-      notify(sock, MSG_ERROR, "Incoming challenge is from %s", clients[client_index].pending_challenge_from);
+      notify(sock, MSG_ERROR, "Usage: refuse <username>");
       return;
    }
-   int s = find_client_index_by_name(clients, client_count, clients[client_index].pending_challenge_from);
+
+   /* Find the challenge from this target */
+   int found_idx = -1;
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_from[i], target_name) == 0)
+      {
+         found_idx = i;
+         break;
+      }
+   }
+
+   if (found_idx == -1)
+   {
+      notify(sock, MSG_ERROR, "No incoming challenge from %s", target_name);
+      return;
+   }
+
+   /* Find challenger */
+   int s = find_client_index_by_name(clients, client_count, target_name);
    if (s != -1)
    {
+      /* Remove from challenger's pending_challenge_to */
+      for (int i = 0; i < clients[s].pending_challenge_to_count; i++)
+      {
+         if (strcmp(clients[s].pending_challenge_to[i], clients[client_index].name) == 0)
+         {
+            /* Shift remaining elements */
+            for (int j = i; j < clients[s].pending_challenge_to_count - 1; j++)
+            {
+               strncpy(clients[s].pending_challenge_to[j],
+                       clients[s].pending_challenge_to[j + 1], MAX_USERNAME_LEN - 1);
+            }
+            clients[s].pending_challenge_to_count--;
+            break;
+         }
+      }
+
+      /* Update challenger's status if no more pending challenges */
+      if (clients[s].pending_challenge_to_count == 0 && clients[s].status == CLIENT_WAITING_FOR_ACCEPT)
+      {
+         clients[s].status = CLIENT_IDLE;
+      }
+
       notify(clients[s].sock, MSG_CHALLENGE_RESPONSE, "%s refused your challenge", clients[client_index].name);
-      clients[s].pending_challenge_to[0] = '\0';
-      clients[s].status = CLIENT_IDLE;
    }
-   clients[client_index].pending_challenge_from[0] = '\0';
-   notify(sock, MSG_INFO, "Challenge refused");
+
+   /* Remove from receiver's pending_challenge_from */
+   for (int j = found_idx; j < clients[client_index].pending_challenge_from_count - 1; j++)
+   {
+      strncpy(clients[client_index].pending_challenge_from[j],
+              clients[client_index].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+   }
+   clients[client_index].pending_challenge_from_count--;
+
+   notify(sock, MSG_INFO, "Challenge from %s refused", target_name);
 }
 
 void handle_accept_command(int sock, Client *clients, int client_index, int client_count, const char *target_name, Match *matches, int *match_count)
 {
-   if (clients[client_index].pending_challenge_from[0] == '\0')
+   if (clients[client_index].pending_challenge_from_count == 0)
    {
-      notify(sock, MSG_ERROR, "You have no incoming challenge");
+      notify(sock, MSG_ERROR, "You have no incoming challenges");
       return;
    }
-   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_from) != 0)
+   if (!target_name || strlen(target_name) == 0)
    {
-      notify(sock, MSG_ERROR, "Incoming challenge is from %s", clients[client_index].pending_challenge_from);
+      notify(sock, MSG_ERROR, "Usage: accept <username>");
       return;
    }
-   int s = find_client_index_by_name(clients, client_count, clients[client_index].pending_challenge_from);
+
+   /* Find the challenge from this target */
+   int found_idx = -1;
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_from[i], target_name) == 0)
+      {
+         found_idx = i;
+         break;
+      }
+   }
+
+   if (found_idx == -1)
+   {
+      notify(sock, MSG_ERROR, "No incoming challenge from %s", target_name);
+      return;
+   }
+
+   int s = find_client_index_by_name(clients, client_count, target_name);
    if (s == -1)
    {
       notify(sock, MSG_ERROR, "Challenger disconnected");
-      clients[client_index].pending_challenge_from[0] = '\0';
+      /* Remove the stale challenge */
+      for (int j = found_idx; j < clients[client_index].pending_challenge_from_count - 1; j++)
+      {
+         strncpy(clients[client_index].pending_challenge_from[j],
+                 clients[client_index].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+      }
+      clients[client_index].pending_challenge_from_count--;
       return;
    }
-   // clear challenge states
-   clients[s].pending_challenge_to[0] = '\0';
-   clients[client_index].pending_challenge_from[0] = '\0';
-   // start match
+
+   /* Remove from challenger's pending_challenge_to */
+   for (int i = 0; i < clients[s].pending_challenge_to_count; i++)
+   {
+      if (strcmp(clients[s].pending_challenge_to[i], clients[client_index].name) == 0)
+      {
+         /* Shift remaining elements */
+         for (int j = i; j < clients[s].pending_challenge_to_count - 1; j++)
+         {
+            strncpy(clients[s].pending_challenge_to[j],
+                    clients[s].pending_challenge_to[j + 1], MAX_USERNAME_LEN - 1);
+         }
+         clients[s].pending_challenge_to_count--;
+         break;
+      }
+   }
+
+   /* Remove from receiver's pending_challenge_from */
+   for (int j = found_idx; j < clients[client_index].pending_challenge_from_count - 1; j++)
+   {
+      strncpy(clients[client_index].pending_challenge_from[j],
+              clients[client_index].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+   }
+   clients[client_index].pending_challenge_from_count--;
+
+   /* Automatically refuse all OTHER incoming challenges */
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      int other_challenger_idx = find_client_index_by_name(clients, client_count, 
+                                                            clients[client_index].pending_challenge_from[i]);
+      if (other_challenger_idx != -1)
+      {
+         /* Remove from other challenger's pending_challenge_to */
+         for (int j = 0; j < clients[other_challenger_idx].pending_challenge_to_count; j++)
+         {
+            if (strcmp(clients[other_challenger_idx].pending_challenge_to[j], clients[client_index].name) == 0)
+            {
+               for (int k = j; k < clients[other_challenger_idx].pending_challenge_to_count - 1; k++)
+               {
+                  strncpy(clients[other_challenger_idx].pending_challenge_to[k],
+                          clients[other_challenger_idx].pending_challenge_to[k + 1], MAX_USERNAME_LEN - 1);
+               }
+               clients[other_challenger_idx].pending_challenge_to_count--;
+               break;
+            }
+         }
+         
+         /* Update other challenger's status if needed */
+         if (clients[other_challenger_idx].pending_challenge_to_count == 0 && 
+             clients[other_challenger_idx].status == CLIENT_WAITING_FOR_ACCEPT)
+         {
+            clients[other_challenger_idx].status = CLIENT_IDLE;
+         }
+         
+         /* Notify other challenger of refusal */
+         notify(clients[other_challenger_idx].sock, MSG_CHALLENGE_RESPONSE, 
+                "%s accepted another challenge and refused yours", clients[client_index].name);
+      }
+   }
+   
+   /* Clear all remaining incoming challenges */
+   clients[client_index].pending_challenge_from_count = 0;
+
+   /* Automatically cancel all outgoing challenges */
+   for (int i = 0; i < clients[client_index].pending_challenge_to_count; i++)
+   {
+      int challenged_idx = find_client_index_by_name(clients, client_count, 
+                                                      clients[client_index].pending_challenge_to[i]);
+      if (challenged_idx != -1)
+      {
+         /* Remove from challenged player's pending_challenge_from */
+         for (int j = 0; j < clients[challenged_idx].pending_challenge_from_count; j++)
+         {
+            if (strcmp(clients[challenged_idx].pending_challenge_from[j], clients[client_index].name) == 0)
+            {
+               for (int k = j; k < clients[challenged_idx].pending_challenge_from_count - 1; k++)
+               {
+                  strncpy(clients[challenged_idx].pending_challenge_from[k],
+                          clients[challenged_idx].pending_challenge_from[k + 1], MAX_USERNAME_LEN - 1);
+               }
+               clients[challenged_idx].pending_challenge_from_count--;
+               break;
+            }
+         }
+         
+         /* Notify challenged player of cancellation */
+         notify(clients[challenged_idx].sock, MSG_CHALLENGE_RESPONSE, 
+                "%s cancelled their challenge (accepted another match)", clients[client_index].name);
+      }
+   }
+   
+   /* Clear all outgoing challenges */
+   clients[client_index].pending_challenge_to_count = 0;
+
+   /* Update status of both players */
+   if (clients[s].pending_challenge_to_count == 0 && clients[s].status == CLIENT_WAITING_FOR_ACCEPT)
+   {
+      clients[s].status = CLIENT_IDLE;
+   }
+   clients[client_index].status = CLIENT_IDLE;
+
+   /* Start the match */
    start_match(clients, s, client_index, matches, match_count);
 }
 

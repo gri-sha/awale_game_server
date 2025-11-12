@@ -18,9 +18,11 @@ typedef struct
    char bio[MAX_BIO_LEN];
    ClientStatus status; // CLIENT_IDLE, CLIENT_WAITING_FOR_ACCEPT, CLIENT_IN_MATCH
    int current_match;   // match id, -1 if not in a match
-   // Challenge state
-   char pending_challenge_to[MAX_USERNAME_LEN];   // username we challenged (if any)
-   char pending_challenge_from[MAX_USERNAME_LEN]; // username who challenged us (if any)
+   // Challenge state - support multiple challenges
+   char pending_challenge_to[MAX_CHALLENGES][MAX_USERNAME_LEN];   // usernames we challenged
+   int pending_challenge_to_count;                                // number of pending challenges sent
+   char pending_challenge_from[MAX_CHALLENGES][MAX_USERNAME_LEN]; // usernames who challenged us
+   int pending_challenge_from_count;                              // number of pending challenges received
    int is_turn;                                   // for in-game: 1 if it's this client's turn, else 0
    // Friends
    char friends[MAX_FRIENDS][MAX_USERNAME_LEN];

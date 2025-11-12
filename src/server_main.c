@@ -9,10 +9,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <time.h>
-#include <stdarg.h>
 
-int main(int argc, char **argv)
+int main()
 {
    int sock = init_connection(); // listening socket
    char buffer[BUF_SIZE];
@@ -126,8 +124,10 @@ int main(int argc, char **argv)
          c.status = CLIENT_IDLE;
          c.current_match = -1;
          memset(c.bio, 0, MAX_BIO_LEN);
-         c.pending_challenge_to[0] = '\0';
-         c.pending_challenge_from[0] = '\0';
+         memset(c.pending_challenge_to, 0, MAX_CHALLENGES * MAX_USERNAME_LEN);
+         c.pending_challenge_to_count = 0;
+         memset(c.pending_challenge_from, 0, MAX_CHALLENGES * MAX_USERNAME_LEN);
+         c.pending_challenge_from_count = 0;
          c.is_turn = 0;
          c.friend_count = 0;
          c.pending_friend_to[0] = '\0';
@@ -159,6 +159,80 @@ int main(int argc, char **argv)
                if (c == 0)
                {
                   close(clients[i].sock);
+                  
+                  /* Handle match cleanup if client was in a match */
+                  if (clients[i].status == CLIENT_IN_MATCH && clients[i].current_match >= 0)
+                  {
+                     Match *m = get_match_by_id(clients[i].current_match, matches, match_count);
+                     if (m)
+                     {
+                        /* Determine opponent */
+                        int opponent_idx = (i == m->player1_index) ? m->player2_index : m->player1_index;
+                        
+                        /* Notify opponent about disconnection */
+                        notify(clients[opponent_idx].sock, MSG_GAME_OVER, "%s disconnected from the match", clients[i].name);
+                        
+                        /* Award win to opponent */
+                        clients[opponent_idx].wins++;
+                        
+                        /* End the match */
+                        end_match(m, clients);
+                     }
+                  }
+                  
+                  /* Clean up pending challenges sent by this client */
+                  for (int j = 0; j < clients[i].pending_challenge_to_count; j++)
+                  {
+                     int target_idx = find_client_index_by_name(clients, client_count, clients[i].pending_challenge_to[j]);
+                     if (target_idx != -1)
+                     {
+                        /* Remove from target's pending_challenge_from */
+                        for (int k = 0; k < clients[target_idx].pending_challenge_from_count; k++)
+                        {
+                           if (strcmp(clients[target_idx].pending_challenge_from[k], clients[i].name) == 0)
+                           {
+                              for (int m = k; m < clients[target_idx].pending_challenge_from_count - 1; m++)
+                              {
+                                 strncpy(clients[target_idx].pending_challenge_from[m], 
+                                        clients[target_idx].pending_challenge_from[m + 1], MAX_USERNAME_LEN - 1);
+                              }
+                              clients[target_idx].pending_challenge_from_count--;
+                              break;
+                           }
+                        }
+                     }
+                  }
+                  
+                  /* Clean up pending challenges received by this client */
+                  for (int j = 0; j < clients[i].pending_challenge_from_count; j++)
+                  {
+                     int challenger_idx = find_client_index_by_name(clients, client_count, clients[i].pending_challenge_from[j]);
+                     if (challenger_idx != -1)
+                     {
+                        /* Remove from challenger's pending_challenge_to */
+                        for (int k = 0; k < clients[challenger_idx].pending_challenge_to_count; k++)
+                        {
+                           if (strcmp(clients[challenger_idx].pending_challenge_to[k], clients[i].name) == 0)
+                           {
+                              for (int m = k; m < clients[challenger_idx].pending_challenge_to_count - 1; m++)
+                              {
+                                 strncpy(clients[challenger_idx].pending_challenge_to[m], 
+                                        clients[challenger_idx].pending_challenge_to[m + 1], MAX_USERNAME_LEN - 1);
+                              }
+                              clients[challenger_idx].pending_challenge_to_count--;
+                              break;
+                           }
+                        }
+                        
+                        /* Update challenger's status if needed */
+                        if (clients[challenger_idx].pending_challenge_to_count == 0 && 
+                            clients[challenger_idx].status == CLIENT_WAITING_FOR_ACCEPT)
+                        {
+                           clients[challenger_idx].status = CLIENT_IDLE;
+                        }
+                     }
+                  }
+                  
                   remove_client(clients, i, &client_count);
                   printf("%s[disconnection]%s %s left the server\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, client.name);
                   strncpy(buffer, client.name, BUF_SIZE - 1);
