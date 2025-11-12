@@ -11,7 +11,7 @@ void protocol_create_message(char *buffer, size_t buf_size, MessageType type, co
 int protocol_parse_message(const char *buffer, MessageType *type, char *payload)
 {
     char type_str[16];
-    
+
     /* Search for pipe symbol in first 4 characters */
     int pipe_pos = -1;
     for (int i = 0; i < 4 && buffer[i] != '\0'; i++)
@@ -22,20 +22,20 @@ int protocol_parse_message(const char *buffer, MessageType *type, char *payload)
             break;
         }
     }
-    
+
     /* Pipe not found in first 4 characters */
     if (pipe_pos == -1)
     {
         return 0;
     }
-    
+
     /* Copy type part (before pipe) */
     strncpy(type_str, buffer, pipe_pos);
     type_str[pipe_pos] = '\0';
-    
+
     /* Copy payload part (after pipe) */
     strcpy(payload, buffer + pipe_pos + 1);
-    
+
     *type = (MessageType)atoi(type_str);
     return 1;
 }
@@ -54,15 +54,16 @@ int protocol_is_command(const char *input)
         strncmp(input, CMD_GET_BIO, strlen(CMD_GET_BIO)) == 0 ||
         strncmp(input, CMD_PM, strlen(CMD_PM)) == 0 ||
         strcmp(input, CMD_GAMES) == 0 ||
-            strncmp(input, CMD_WATCH, strlen(CMD_WATCH)) == 0 ||
-            strncmp(input, CMD_UNWATCH, strlen(CMD_UNWATCH)) == 0 ||
-            strncmp(input, CMD_ADD_FRIEND, strlen(CMD_ADD_FRIEND)) == 0 ||
-            strncmp(input, CMD_ACCEPT_FRIEND, strlen(CMD_ACCEPT_FRIEND)) == 0 ||
-            strncmp(input, CMD_REFUSE_FRIEND, strlen(CMD_REFUSE_FRIEND)) == 0 ||
-            strncmp(input, CMD_PRIVATE, strlen(CMD_PRIVATE)) == 0 ||
-            strcmp(input, CMD_FRIENDS) == 0 ||
-            strcmp(input, CMD_RANKING) == 0 ||
-            strncmp(input, CMD_WATCH_REPLAY, strlen(CMD_WATCH_REPLAY)) == 0) {
+        strncmp(input, CMD_WATCH, strlen(CMD_WATCH)) == 0 ||
+        strncmp(input, CMD_UNWATCH, strlen(CMD_UNWATCH)) == 0 ||
+        strncmp(input, CMD_ADD_FRIEND, strlen(CMD_ADD_FRIEND)) == 0 ||
+        strncmp(input, CMD_ACCEPT_FRIEND, strlen(CMD_ACCEPT_FRIEND)) == 0 ||
+        strncmp(input, CMD_REFUSE_FRIEND, strlen(CMD_REFUSE_FRIEND)) == 0 ||
+        strncmp(input, CMD_PRIVATE, strlen(CMD_PRIVATE)) == 0 ||
+        strcmp(input, CMD_FRIENDS) == 0 ||
+        strcmp(input, CMD_RANKING) == 0 ||
+        strncmp(input, CMD_WATCH_REPLAY, strlen(CMD_WATCH_REPLAY)) == 0)
+    {
         return 1;
     }
     return 0;
@@ -72,13 +73,16 @@ void protocol_parse_command(const char *input, char *command, char *args, size_t
 {
     strncpy(command, input, cmd_size - 1);
     command[cmd_size - 1] = 0;
-    
+
     char *space = strchr(command, ' ');
-    if (space) {
+    if (space)
+    {
         *space = 0;
         strncpy(args, space + 1, args_size - 1);
         args[args_size - 1] = 0;
-    } else {
+    }
+    else
+    {
         args[0] = 0;
     }
 }

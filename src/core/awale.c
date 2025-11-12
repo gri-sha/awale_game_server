@@ -64,13 +64,18 @@ void display_board(const Board *board)
 // Render the board to a provided buffer (similar to display_board but as text)
 int render_board(const Board *board, char *out, size_t out_size)
 {
-    if (out == NULL || out_size == 0) return 0;
+    if (out == NULL || out_size == 0)
+        return 0;
     size_t off = 0;
-    #define APPENDF(fmt, ...) do { \
-        if (off < out_size) { \
+#define APPENDF(fmt, ...)                                                     \
+    do                                                                        \
+    {                                                                         \
+        if (off < out_size)                                                   \
+        {                                                                     \
             int _n = snprintf(out + off, out_size - off, fmt, ##__VA_ARGS__); \
-            if (_n > 0) off += (size_t)_n; \
-        } \
+            if (_n > 0)                                                       \
+                off += (size_t)_n;                                            \
+        }                                                                     \
     } while (0)
 
     APPENDF("\n");
@@ -107,8 +112,9 @@ int render_board(const Board *board, char *out, size_t out_size)
     }
     APPENDF("\n%sDirection -->           Player 1 [Score: %2d]%s\n\n", COLOR_BOLD COLOR_YELLOW, board->score[0], COLOR_RESET);
 
-    #undef APPENDF
-    if (off >= out_size) {
+#undef APPENDF
+    if (off >= out_size)
+    {
         // ensure null-termination in worst case
         out[out_size - 1] = '\0';
         return (int)(out_size - 1);
@@ -125,7 +131,7 @@ bool is_valid_move(const Board *board, int pit)
         printf("%s✗ Invalid pit number!%s\n", COLOR_RED, COLOR_RESET);
         return false;
     }
- 
+
     // Check if pit belongs to current player
     int player = board->current_player;
     int start_pit = player * PITS_PER_PLAYER;
@@ -348,7 +354,7 @@ int get_player_input(const Board *board)
 
     while (true)
     {
-        printf("%s→ Player %d: %s", 
+        printf("%s→ Player %d: %s",
                COLOR_BOLD COLOR_BLUE, board->current_player + 1, COLOR_RESET);
 
         if (fgets(input, sizeof(input), stdin) == NULL)
