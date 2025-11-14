@@ -7,7 +7,8 @@
 typedef enum
 {
    CLIENT_IDLE,
-   CLIENT_IN_MATCH
+   CLIENT_IN_MATCH,
+   CLIENT_DISCONNECTED
 } ClientStatus;
 
 typedef struct
@@ -40,6 +41,7 @@ typedef struct
    int watchers[MAX_CLIENTS]; // sockets of watchers
    int watcher_count;
    int private_mode; // if 1 only friends can watch
+   bool is_active; // if false, match has ended
    // replay data
    int replay_move_count;
    char replay_boards[MAX_MOVES][BUF_SIZE]; // board snapshot after each move

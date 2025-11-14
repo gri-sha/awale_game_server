@@ -100,6 +100,7 @@ void end_match(Match *m, Client *clients)
 {
    if (!m)
       return;
+   m->is_active = 0;
    clients[m->player1_index].status = CLIENT_IDLE;
    clients[m->player2_index].status = CLIENT_IDLE;
    clients[m->player1_index].current_match = -1;
@@ -136,6 +137,7 @@ Match *start_match(Client *clients, int a, int b, Match *matches, int *match_cou
    init_board(&m->board);
    m->watcher_count = 0;
    m->private_mode = 0;
+   m->is_active = 1;
    m->replay_move_count = 0;
    clients[a].status = CLIENT_IN_MATCH;
    clients[b].status = CLIENT_IN_MATCH;
@@ -1449,12 +1451,20 @@ void handle_games_command(int sock, Client *clients, Match *matches, int match_c
    for (int i = 0; i < match_count; i++)
    {
       Match *m = &matches[i];
-      // Determine whose turn
       const char *p1 = clients[m->player1_index].name;
       const char *p2 = clients[m->player2_index].name;
-      const char *turn = (m->board.current_player == 0) ? p1 : p2;
       char line[256];
-      snprintf(line, sizeof(line), "#%d %s vs %s | turn: %s\n", m->id, p1, p2, turn);
+      
+      if (m->is_active)
+      {
+         // Match is ongoing - show whose turn it is
+         const char *turn = (m->board.current_player == 0) ? p1 : p2;
+         snprintf(line, sizeof(line), "#%d %s vs %s | turn: %s\n", m->id, p1, p2, turn);
+      }
+      else
+      {
+         snprintf(line, sizeof(line), "#%d %s vs %s | match ended\n", m->id, p1, p2);
+      }
       strncat(payload, line, sizeof(payload) - strlen(payload) - 1);
    }
    protocol_create_message(list, BUF_SIZE, MSG_MATCH_LIST, payload);

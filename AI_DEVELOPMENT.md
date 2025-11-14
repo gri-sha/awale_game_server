@@ -1,4 +1,5 @@
 # Usage of AI Tools
+
 This document outlines how AI tools were leveraged during the development of this project.
 
 ### AI Models Used :
@@ -17,7 +18,7 @@ Before generating code for complex features, a planning phase was executed: AI a
 
 
 #### 1 Feature >= 1 Prompt
-"One feature >= One prompt" (a.k.a "do not implement 112462 features at once") principle was followed. This allows not to dilute the context of the model and simplify the debugging process.
+"One feature >= One prompt" (a.k.a "do not implement 112462 features at once") principle was followed . This allows not to dilute the context of the model and simplify the debugging process.
 
 #### Context Management
 Important to include related files to the context of the model in order to accelerate the output and don't mislead the agent in refencing a definition/declation of a specific element.
