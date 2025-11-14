@@ -6,20 +6,20 @@
 // Displays total seeds at the bottom of the screen without moving the cursor
 void display_total_seeds_at_bottom(int total_seeds, int max_seeds)
 {
-    printf("%s", CURSOR_SAVE);  // Save cursor position
-    printf("%s", CURSOR_MOVE_BOTTOM);  // Move to bottom of screen
-    printf("%s", CLEAR_LINE);  // Clear line
+    printf("%s", CURSOR_SAVE);        // Save cursor position
+    printf("%s", CURSOR_MOVE_BOTTOM); // Move to bottom of screen
+    printf("%s", CLEAR_LINE);         // Clear line
     printf("\nTotal seeds so far: %d/%d", total_seeds, max_seeds);
-    printf("%s", CURSOR_RESTORE);  // Restore cursor position
+    printf("%s", CURSOR_RESTORE); // Restore cursor position
     fflush(stdout);
 }
 
 void remove_total_seeds_display()
 {
-    printf("%s", CURSOR_SAVE);  // Save cursor position
-    printf("%s", CURSOR_MOVE_BOTTOM);  // Move to bottom of screen
-    printf("%s", CLEAR_LINE);  // Clear line
-    printf("%s", CURSOR_RESTORE);  // Restore cursor position
+    printf("%s", CURSOR_SAVE);        // Save cursor position
+    printf("%s", CURSOR_MOVE_BOTTOM); // Move to bottom of screen
+    printf("%s", CLEAR_LINE);         // Clear line
+    printf("%s", CURSOR_RESTORE);     // Restore cursor position
     fflush(stdout);
 }
 
@@ -28,12 +28,12 @@ int get_validated_integer_input(const char *prompt)
 {
     int value;
     int result;
-    
+
     while (1)
     {
         printf("%s", prompt);
         result = scanf("%d", &value);
-        
+
         if (result == 1)
         {
             // Valid integer input
@@ -43,7 +43,8 @@ int get_validated_integer_input(const char *prompt)
         {
             // Non-numeric input, clear the buffer
             int c;
-            while ((c = getchar()) != '\n' && c != EOF);
+            while ((c = getchar()) != '\n' && c != EOF)
+                ;
             printf("Invalid input! Please enter a number.\n");
         }
         else if (result == EOF)
@@ -73,7 +74,7 @@ bool is_valid_board_seeds(const Board *board)
 bool input_init_board(Board *board)
 {
     int total_seeds = 0;
-    
+
     printf("Enter the number if seeds in each pit for player 1:\n");
     for (int i = 0; i < PITS_PER_PLAYER; i++)
     {
@@ -100,7 +101,7 @@ bool input_init_board(Board *board)
     board->score[0] = get_validated_integer_input("Player 1 Score: ");
     total_seeds += board->score[0];
     display_total_seeds_at_bottom(total_seeds, INITIAL_SEEDS * TOTAL_PITS);
-    
+
     board->score[1] = get_validated_integer_input("Player 2 Score: ");
     total_seeds += board->score[1];
     display_total_seeds_at_bottom(total_seeds, INITIAL_SEEDS * TOTAL_PITS);
@@ -119,11 +120,11 @@ bool input_init_board(Board *board)
     }
 
     // Clear the bottom line
-    printf("%s", CURSOR_SAVE);  // Save cursor position
-    printf("%s", CURSOR_MOVE_BOTTOM);  // Move to bottom of screen
-    printf("%s", CLEAR_LINE);  // Clear line
-    printf("%s", CURSOR_RESTORE);  // Restore cursor position
-    
+    printf("%s", CURSOR_SAVE);        // Save cursor position
+    printf("%s", CURSOR_MOVE_BOTTOM); // Move to bottom of screen
+    printf("%s", CLEAR_LINE);         // Clear line
+    printf("%s", CURSOR_RESTORE);     // Restore cursor position
+
     return true;
 }
 
@@ -153,6 +154,8 @@ int main()
     printf("\n");
 
     init_test_board(&board);
+    while ((getchar()) != '\n')
+        ; // Clear input buffer
 
     // Main game loop
     while (!is_game_over(&board))

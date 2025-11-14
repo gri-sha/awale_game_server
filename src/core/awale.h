@@ -19,6 +19,7 @@
 #define AWALE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "../utils/constants.h"
 
 // Structure to represent the game board

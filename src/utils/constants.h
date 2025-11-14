@@ -1,8 +1,6 @@
 #ifndef CONSTANTS_H
 #define CONSTANTS_H
 
-#include "../protocol/protocol.h"
-
 #define PITS_PER_PLAYER 6
 #define TOTAL_PITS 12
 #define INITIAL_SEEDS 4
@@ -53,10 +51,9 @@
 // limits
 #define MAX_USERNAME_LEN 32
 #define MAX_BIO_LEN 256
-#define MAX_CLIENTS 256
-#define MAX_CHALLENGES 512
-#define MAX_NOTIFS 512
-#define MAX_MATCHES 128
+#define MAX_CLIENTS 128
+#define MAX_CHALLENGES 128
+#define MAX_MATCHES 64
 #define MAX_FRIENDS 128
 // replays
 #define MAX_REPLAYS 256
@@ -68,11 +65,5 @@
 typedef struct sockaddr_in SOCKADDR_IN;
 typedef struct sockaddr SOCKADDR;
 typedef struct in_addr IN_ADDR;
-
-typedef struct
-{
-   MessageType type;
-   char payload[BUF_SIZE - sizeof(int)];
-} ServerMessage;
 
 #endif

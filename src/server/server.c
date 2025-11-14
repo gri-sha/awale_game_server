@@ -14,48 +14,43 @@
 #include <time.h>
 #include <stdarg.h>
 
-typedef struct {
-   int id;
-   int player1_index; // index in clients array
-   int player2_index; // index in clients array
-   Board board;
-   int watchers[MAX_CLIENTS]; // sockets of watchers
-   int watcher_count;
-   int private_mode; // if 1 only friends can watch
-   // replay data
-   int replay_move_count;
-   char replay_boards[MAX_MOVES][BUF_SIZE]; // board snapshot after each move
-} Match;
-
-static Match matches[MAX_MATCHES];
-static int match_count = 0;
-
-static int find_client_index_by_name(Client *clients, int actual, const char *name) {
-   for (int i = 0; i < actual; i++) {
-      if (strcmp(clients[i].name, name) == 0) return i;
+int find_client_index_by_name(Client *clients, int client_count, const char *name)
+{
+   for (int i = 0; i < client_count; i++)
+   {
+      if (strcmp(clients[i].name, name) == 0)
+         return i;
    }
    return -1;
 }
 
-static int is_friend(const Client *c, const char *username) {
-   for (int i = 0; i < c->friend_count; i++) {
-      if (strcmp(c->friends[i], username) == 0) return 1;
+int is_friend(const Client *c, const char *username)
+{
+   for (int i = 0; i < c->friend_count; i++)
+   {
+      if (strcmp(c->friends[i], username) == 0)
+         return 1;
    }
    return 0;
 }
 
-static int add_friend(Client *c, const char *username) {
-   if (c->friend_count >= MAX_FRIENDS) return 0;
-   if (is_friend(c, username)) return 1;
+int add_friend(Client *c, const char *username)
+{
+   if (c->friend_count >= MAX_FRIENDS)
+      return 0;
+   if (is_friend(c, username))
+      return 1;
    strncpy(c->friends[c->friend_count], username, MAX_USERNAME_LEN - 1);
-   c->friends[c->friend_count][MAX_USERNAME_LEN-1] = '\0';
+   c->friends[c->friend_count][MAX_USERNAME_LEN - 1] = '\0';
    c->friend_count++;
    return 1;
 }
 
-static void notify(int sock, MessageType type, const char *fmt, ...) {
+void notify(int sock, MessageType type, const char *fmt, ...)
+{
    char payload[BUF_SIZE];
-   va_list ap; va_start(ap, fmt);
+   va_list ap;
+   va_start(ap, fmt);
    vsnprintf(payload, sizeof(payload), fmt, ap);
    va_end(ap);
    char msg[BUF_SIZE];
@@ -63,7 +58,8 @@ static void notify(int sock, MessageType type, const char *fmt, ...) {
    write_client(sock, msg);
 }
 
-static void broadcast_board(Match *m, Client *clients) {
+void broadcast_board(Match *m, Client *clients)
+{
    char board_txt[BUF_SIZE];
    render_board(&m->board, board_txt, sizeof(board_txt));
    // Append turn info for each recipient individually (players see 'Your turn')
@@ -71,13 +67,19 @@ static void broadcast_board(Match *m, Client *clients) {
    int p2_turn = (m->board.current_player == 1);
    // Player 1 message
    char payload_p1[BUF_SIZE];
-   snprintf(payload_p1, sizeof(payload_p1), "%s\n%s", board_txt, p1_turn ? "Your turn" : "Waiting...");
+   if (p1_turn)
+      snprintf(payload_p1, sizeof(payload_p1), "%s\n%s%sYour turn (Player 1)%s", board_txt, COLOR_BLUE, COLOR_BOLD, COLOR_RESET);
+   else
+      snprintf(payload_p1, sizeof(payload_p1), "%s\n%sWaiting...%s", board_txt, STYLE_DIM, COLOR_RESET);
    char msg_p1[BUF_SIZE];
    protocol_create_message(msg_p1, sizeof(msg_p1), MSG_BOARD_UPDATE, payload_p1);
    write_client(clients[m->player1_index].sock, msg_p1);
    // Player 2 message
    char payload_p2[BUF_SIZE];
-   snprintf(payload_p2, sizeof(payload_p2), "%s\n%s", board_txt, p2_turn ? "Your turn" : "Waiting...");
+   if (p2_turn)
+      snprintf(payload_p2, sizeof(payload_p2), "%s\n%s%sYour turn (Player 2)%s", board_txt, COLOR_BLUE, COLOR_BOLD, COLOR_RESET);
+   else
+      snprintf(payload_p2, sizeof(payload_p2), "%s\n%sWaiting...%s", board_txt, STYLE_DIM, COLOR_RESET);
    char msg_p2[BUF_SIZE];
    protocol_create_message(msg_p2, sizeof(msg_p2), MSG_BOARD_UPDATE, payload_p2);
    write_client(clients[m->player2_index].sock, msg_p2);
@@ -87,13 +89,16 @@ static void broadcast_board(Match *m, Client *clients) {
    snprintf(payload_w, sizeof(payload_w), "%s\nTurn: %s", board_txt, turn_name);
    char msg_w[BUF_SIZE];
    protocol_create_message(msg_w, sizeof(msg_w), MSG_BOARD_UPDATE, payload_w);
-   for (int i = 0; i < m->watcher_count; i++) {
+   for (int i = 0; i < m->watcher_count; i++)
+   {
       write_client(m->watchers[i], msg_w);
    }
 }
 
-static void end_match(Match *m, Client *clients) {
-   if (!m) return;
+void end_match(Match *m, Client *clients)
+{
+   if (!m)
+      return;
    clients[m->player1_index].status = CLIENT_IDLE;
    clients[m->player2_index].status = CLIENT_IDLE;
    clients[m->player1_index].current_match = -1;
@@ -103,21 +108,28 @@ static void end_match(Match *m, Client *clients) {
    // Notify watchers about game over with final score
    char payload[BUF_SIZE];
    const char *winner = NULL;
-   if (m->board.score[0] > m->board.score[1]) winner = clients[m->player1_index].name;
-   else if (m->board.score[1] > m->board.score[0]) winner = clients[m->player2_index].name;
-   if (winner) snprintf(payload, sizeof(payload), "Game over. Winner: %s (%d-%d)", winner, m->board.score[0], m->board.score[1]);
-   else snprintf(payload, sizeof(payload), "Game over. Draw (%d-%d)", m->board.score[0], m->board.score[1]);
+   if (m->board.score[0] > m->board.score[1])
+      winner = clients[m->player1_index].name;
+   else if (m->board.score[1] > m->board.score[0])
+      winner = clients[m->player2_index].name;
+   if (winner)
+      snprintf(payload, sizeof(payload), "Game over. Winner: %s (%d-%d)", winner, m->board.score[0], m->board.score[1]);
+   else
+      snprintf(payload, sizeof(payload), "Game over. Draw (%d-%d)", m->board.score[0], m->board.score[1]);
    char msg[BUF_SIZE];
    protocol_create_message(msg, sizeof(msg), MSG_GAME_OVER, payload);
-   for (int i = 0; i < m->watcher_count; i++) {
+   for (int i = 0; i < m->watcher_count; i++)
+   {
       write_client(m->watchers[i], msg);
    }
 }
 
-static Match* start_match(Client *clients, int a, int b) {
-   if (match_count >= MAX_MATCHES) return NULL;
-   Match *m = &matches[match_count];
-   m->id = match_count;
+Match *start_match(Client *clients, int a, int b, Match *matches, int *match_count)
+{
+   if (*match_count >= MAX_MATCHES)
+      return NULL;
+   Match *m = &matches[*match_count];
+   m->id = *match_count;
    m->player1_index = a;
    m->player2_index = b;
    init_board(&m->board);
@@ -129,301 +141,77 @@ static Match* start_match(Client *clients, int a, int b) {
    clients[a].current_match = m->id;
    clients[b].current_match = m->id;
    // Randomly choose who starts: 0 -> a, 1 -> b
-   srand((unsigned int)time(NULL) ^ (unsigned int)(a<<8) ^ (unsigned int)(b<<16));
+   srand((unsigned int)time(NULL) ^ (unsigned int)(a << 8) ^ (unsigned int)(b << 16));
    int starter = rand() % 2;
-   if (starter == 0) {
-      m->board.current_player = 0; // we'll map: current_player 0 -> a, 1 -> b
-      clients[a].is_turn = 1; clients[b].is_turn = 0;
-   } else {
-      m->board.current_player = 1;
-      clients[a].is_turn = 0; clients[b].is_turn = 1;
-   }
-   // Notify players
-   notify(clients[a].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[b].name, clients[a].is_turn?"You":"Opponent");
-   notify(clients[b].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[a].name, clients[b].is_turn?"You":"Opponent");
-   broadcast_board(m, clients);
-   // store initial board snapshot for replay (before any move)
-   if (m->replay_move_count < MAX_MOVES) {
-      char snap[BUF_SIZE];
-      render_board(&m->board, snap, sizeof(snap));
-      strncpy(m->replay_boards[m->replay_move_count], snap, BUF_SIZE-1);
-      m->replay_boards[m->replay_move_count][BUF_SIZE-1] = '\0';
-      m->replay_move_count++;
-   }
-   match_count++;
-   return m;
-}
-
-void app(void)
-{
-   int sock = init_connection(); // listening socket
-   char buffer[BUF_SIZE];
-
-   int actual = 0; // the index for the array of client file descriptors (sockets)
-
-   // Every Unix/Linux process automatically gets three open file descriptors:
-   // 0 - STDIN_FILENO - Standard input (keyboard)
-   // 1 - STDOUT_FILENO - Standard output (console/terminal)
-   // 2 - STDERR_FILENO - Standard error output (console/terminal)
-   // so the first socket created will be 3, the next 4, etc.
-   int max = sock; // maximum file descriptor number (if open new file (sockets) it raises), used in select()
-
-   Client clients[MAX_CLIENTS]; // array for all clients
-
-   // read file descriptors set (to store file descriptors to monitor)
-   fd_set rdfs;
-   // FD_ZERO(&rdfs) - Clears all bits - empties the set
-   // FD_SET(fd, &rdfs) - Adds a file descriptor to monitor
-   // FD_ISSET(fd, &rdfs) - Checks if a file descriptor has activity
-
-   // log server startup information
-   char *server_ip = get_server_ip();
-   if (server_ip)
+   if (starter == 0)
    {
-      printf("%s[server]%s Started on %s:%d\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, server_ip, SERVER_PORT);
+      m->board.current_player = 0; // we'll map: current_player 0 -> a, 1 -> b
+      clients[a].is_turn = 1;
+      clients[b].is_turn = 0;
    }
    else
    {
-      printf("%s[error]%s Failed to determine server IP address\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+      m->board.current_player = 1;
+      clients[a].is_turn = 0;
+      clients[b].is_turn = 1;
    }
-
-   while (1)
+   // Notify players
+   notify(clients[a].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[b].name, clients[a].is_turn ? "You" : "Opponent");
+   notify(clients[b].sock, MSG_CHALLENGE_RESPONSE, "Game started vs %s. %s starts.", clients[a].name, clients[b].is_turn ? "You" : "Opponent");
+   broadcast_board(m, clients);
+   // store initial board snapshot for replay (before any move)
+   if (m->replay_move_count < MAX_MOVES)
    {
-      int i = 0;
-      FD_ZERO(&rdfs);              // clear all the bits of the set (empty it)
-      FD_SET(STDIN_FILENO, &rdfs); // add keyboard
-      FD_SET(sock, &rdfs);         // add listening socket
-
-      /* add socket of each client */
-      for (i = 0; i < actual; i++)
-      {
-         FD_SET(clients[i].sock, &rdfs);
-      }
-
-      if (select(max + 1, &rdfs, NULL, NULL, NULL) == -1)
-      {
-         perror("select()");
-         exit(errno);
-      }
-
-      // if there is activity on keyboard stop the sevrer
-      if (FD_ISSET(STDIN_FILENO, &rdfs))
-      {
-         break;
-      }
-      // if there is activity on the listening socket - new client
-      else if (FD_ISSET(sock, &rdfs))
-      {
-#ifdef DEBUG
-         printf("%sActivity on listening socket: new client connecting...%s\n", STYLE_DIM, COLOR_RESET);
-#endif
-         SOCKADDR_IN csin = {0};
-         unsigned int sinsize = sizeof csin;
-         int csock = accept(sock, (SOCKADDR *)&csin, &sinsize); // client socket
-         if (csock == SOCKET_ERROR)
-         {
-            perror("accept()");
-            continue;
-         }
-
-         // try to read the name of the client (it is sended at connection)
-         if (read_from_client(csock, buffer) == 0)
-         {
-               printf("%s[error]%s Client disconnected before sending name.\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
-               close(csock);
-               continue;
-         }
-
-         /* Check if username is unique */
-         if (!is_username_unique(clients, actual, buffer))
-         {
-               printf("%s[error]%s Username '%s' already exists. Connection rejected.\n", COLOR_RED COLOR_BOLD, COLOR_RESET, buffer);
-               char error_msg[BUF_SIZE];
-               protocol_create_message(error_msg, BUF_SIZE, MSG_ERROR, "Username already taken. Connection rejected.");
-               write_client(csock, error_msg);
-               close(csock);
-               continue;
-         }
-
-         max = csock > max ? csock : max; // update maximum fd number
-#ifdef DEBUG
-         printf("%sMax fd updated to %d%s\n", STYLE_DIM, max, COLOR_RESET);
-#endif
-
-         FD_SET(csock, &rdfs);
-
-         Client c;
-         c.sock = csock;
-         strncpy(c.name, buffer, MAX_USERNAME_LEN - 1);
-         c.status = CLIENT_IDLE;
-         c.current_match = -1;
-         memset(c.bio, 0, MAX_BIO_LEN);
-         c.pending_challenge_to[0] = '\0';
-         c.pending_challenge_from[0] = '\0';
-         c.is_turn = 0;
-         c.friend_count = 0;
-         c.pending_friend_to[0] = '\0';
-         c.pending_friend_from[0] = '\0';
-         c.wins = 0;
-         clients[actual] = c;
-         actual++;
-
-         printf("%s[connection]%s %s joined the server\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, c.name);
-
-         /* Send connection acknowledgment to client */
-         char ack_msg[BUF_SIZE];
-         protocol_create_message(ack_msg, BUF_SIZE, MSG_CONNECT_ACK, c.name);
-         write_client(csock, ack_msg);
-      }
-      // if there is activity not on listening socket nor on keyboard - maybe client is talking or an error
-      // we need to check all clients whether they are talking
-      else
-      {
-         int i = 0;
-         for (i = 0; i < actual; i++)
-         {
-            /* a client is talking */
-            if (FD_ISSET(clients[i].sock, &rdfs))
-            {
-               Client client = clients[i];
-               int c = read_from_client(clients[i].sock, buffer);
-               /* client disconnected */
-               if (c == 0)
-               {
-                  close(clients[i].sock);
-                  remove_client(clients, i, &actual);
-                  printf("%s[disconnection]%s %s left the server\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, client.name);
-                  strncpy(buffer, client.name, BUF_SIZE - 1);
-                  strncat(buffer, " disconnected !", BUF_SIZE - strlen(buffer) - 1);
-                  send_message_to_all_clients(clients, client, actual, buffer, 1);
-               }
-               else
-               {
-                  printf("%s[message]%s %s: %s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, client.name, buffer);
-                  
-                  /* Parse command and arguments */
-                  char command[BUF_SIZE];
-                  char args[BUF_SIZE];
-                  protocol_parse_command(buffer, command, args, BUF_SIZE, BUF_SIZE);
-                  
-                  /* Handle different commands */
-                  if (strcmp(command, CMD_LIST_USERS) == 0) {
-                     handle_list_command(clients[i].sock, clients, actual);
-                  }
-                  else if (strcmp(command, CMD_MSG) == 0) {
-                     handle_message_command(clients[i].sock, clients, client, actual, args);
-                  }
-                  else if (strcmp(command, CMD_SET_BIO) == 0) {
-                     handle_bio_command(clients[i].sock, clients, i, args);
-                  }
-                  else if (strcmp(command, CMD_GET_BIO) == 0) {
-                     handle_getbio_command(clients[i].sock, clients, actual, args);
-                  }
-                  else if (strcmp(command, CMD_PM) == 0) {
-                     handle_pm_command(clients[i].sock, clients, client, actual, args);
-                  }
-                  else if (strcmp(command, CMD_GAMES) == 0) {
-                     handle_games_command(clients[i].sock, clients, actual);
-                  }
-                  else if (strcmp(command, CMD_WATCH) == 0) {
-                     handle_watch_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_UNWATCH) == 0) {
-                     handle_unwatch_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_ADD_FRIEND) == 0) {
-                     handle_addfriend_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_ACCEPT_FRIEND) == 0) {
-                     handle_acceptfriend_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_REFUSE_FRIEND) == 0) {
-                     handle_refusefriend_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_PRIVATE) == 0) {
-                     handle_private_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_FRIENDS) == 0) {
-                     handle_friends_command(clients[i].sock, clients, i, actual);
-                  }
-                  else if (strcmp(command, CMD_RANKING) == 0) {
-                     handle_ranking_command(clients[i].sock, clients, actual);
-                  }
-                  else if (strcmp(command, CMD_WATCH_REPLAY) == 0) {
-                     handle_watchreplay_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_CHALLENGE) == 0) {
-                     handle_challenge_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_ACCEPT) == 0) {
-                     handle_accept_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_REFUSE) == 0) {
-                     handle_refuse_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_CANCEL) == 0) {
-                     handle_cancel_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_MOVE) == 0) {
-                     handle_move_command(clients[i].sock, clients, i, actual, args);
-                  }
-                  else if (strcmp(command, CMD_QUIT) == 0) {
-                     handle_quit_command(clients[i].sock, clients, i, actual);
-                  }
-                  else {
-                     /* Unknown command or regular message */
-                     handle_message_command(clients[i].sock, clients, client, actual, buffer);
-                  }
-               }
-               break;
-            }
-         }
-      }
+      char snap[BUF_SIZE];
+      render_board(&m->board, snap, sizeof(snap));
+      strncpy(m->replay_boards[m->replay_move_count], snap, BUF_SIZE - 1);
+      m->replay_boards[m->replay_move_count][BUF_SIZE - 1] = '\0';
+      m->replay_move_count++;
    }
-
-   clear_clients(clients, actual);
-   end_connection(sock);
+   (*match_count)++;
+   return m;
 }
 
-void clear_clients(Client *clients, int actual)
+void clear_clients(Client *clients, int client_count)
 {
    int i = 0;
-   for (i = 0; i < actual; i++)
+   for (i = 0; i < client_count; i++)
    {
       close(clients[i].sock);
    }
 }
 
-void remove_client(Client *clients, int to_remove, int *actual)
+void remove_client(Client *clients, int to_remove, int *client_count)
 {
    /* we remove the client in the array */
-   memmove(clients + to_remove, clients + to_remove + 1, (*actual - to_remove - 1) * sizeof(Client));
+   memmove(clients + to_remove, clients + to_remove + 1, (*client_count - to_remove - 1) * sizeof(Client));
    /* number client - 1 */
-   (*actual)--;
+   (*client_count)--;
 }
 
-void send_message_to_all_clients(Client *clients, Client sender, int actual, const char *buffer, char from_server)
+void send_message_to_all_clients(Client *clients, Client sender, int client_count, const char *buffer, char from_server)
 {
    int i = 0;
-   char message[BUF_SIZE];
-   message[0] = 0;
-   for (i = 0; i < actual; i++)
+   for (i = 0; i < client_count; i++)
    {
       /* we don't send message to the sender */
       if (sender.sock != clients[i].sock)
       {
+         char message[BUF_SIZE];
+         message[0] = 0;
          if (from_server == 0)
          {
             strncpy(message, sender.name, BUF_SIZE - 1);
             strncat(message, " : ", sizeof message - strlen(message) - 1);
          }
          strncat(message, buffer, sizeof message - strlen(message) - 1);
+         printf("message: %s\n", message);
          write_client(clients[i].sock, message);
       }
    }
 }
 
-int init_connection(void)
+int init_connection(int port)
 {
    int sock = socket(AF_INET, SOCK_STREAM, 0);
    SOCKADDR_IN sin = {0};
@@ -435,7 +223,7 @@ int init_connection(void)
    }
 
    sin.sin_addr.s_addr = htonl(INADDR_ANY);
-   sin.sin_port = htons(SERVER_PORT);
+   sin.sin_port = htons(port);
    sin.sin_family = AF_INET;
 
    if (bind(sock, (SOCKADDR *)&sin, sizeof sin) == SOCKET_ERROR)
@@ -477,15 +265,15 @@ int read_from_client(int sock, char *buffer)
 void write_client(int sock, const char *buffer)
 {
    size_t len = strlen(buffer);
-   
+
    /* Send message length first (4 bytes) */
-   if (send(sock, (char*)&len, sizeof(len), 0) < 0)
+   if (send(sock, (char *)&len, sizeof(len), 0) < 0)
    {
       perror("send() - length");
       exit(errno);
    }
-   
-   /* Send actual message */
+
+   /* Send client_count message */
    if (send(sock, buffer, len, 0) < 0)
    {
       perror("send() - message");
@@ -498,7 +286,7 @@ char *get_server_ip(void)
    static char ip_str[INET_ADDRSTRLEN];
    struct sockaddr_in sin = {0};
    socklen_t len = sizeof(sin);
-   
+
    /* Create a temporary socket to determine the local IP */
    int sock = socket(AF_INET, SOCK_DGRAM, 0);
    if (sock == INVALID_SOCKET)
@@ -506,19 +294,19 @@ char *get_server_ip(void)
       perror("socket()");
       return NULL;
    }
-   
+
    /* Connect to a public DNS server (doesn't actually send data) */
    sin.sin_family = AF_INET;
    sin.sin_port = htons(53);
    inet_pton(AF_INET, "8.8.8.8", &sin.sin_addr);
-   
+
    if (connect(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0)
    {
       perror("connect()");
       close(sock);
       return NULL;
    }
-   
+
    /* Get the local address bound to this socket */
    if (getsockname(sock, (struct sockaddr *)&sin, &len) < 0)
    {
@@ -526,30 +314,30 @@ char *get_server_ip(void)
       close(sock);
       return NULL;
    }
-   
+
    close(sock);
-   
+
    /* Convert IP address to string */
    inet_ntop(AF_INET, &sin.sin_addr, ip_str, INET_ADDRSTRLEN);
-   
+
    return ip_str;
 }
 
-void handle_list_command(int sock, Client *clients, int actual)
+void handle_list_command(int sock, Client *clients, int client_count)
 {
    /* Build list of all online users with names and bios on separate lines */
    char user_list[BUF_SIZE];
    user_list[0] = 0;
-   
-   for (int i = 0; i < actual; i++)
+
+   for (int i = 0; i < client_count; i++)
    {
       /* Add user name */
       strncat(user_list, clients[i].name, BUF_SIZE - strlen(user_list) - 1);
-      
+
       /* Add bio or "no bio" (with dimmed style) */
       strncat(user_list, "\n", BUF_SIZE - strlen(user_list) - 1);
       strncat(user_list, STYLE_DIM, BUF_SIZE - strlen(user_list) - 1);
-      
+
       if (strlen(clients[i].bio) > 0)
       {
          strncat(user_list, clients[i].bio, BUF_SIZE - strlen(user_list) - 1);
@@ -558,11 +346,11 @@ void handle_list_command(int sock, Client *clients, int actual)
       {
          strncat(user_list, "no bio", BUF_SIZE - strlen(user_list) - 1);
       }
-      
+
       strncat(user_list, COLOR_RESET, BUF_SIZE - strlen(user_list) - 1);
-      
+
       /* Add separator except for last user */
-      if (i < actual - 1)
+      if (i < client_count - 1)
       {
          strncat(user_list, "\n", BUF_SIZE - strlen(user_list) - 1);
       }
@@ -571,25 +359,25 @@ void handle_list_command(int sock, Client *clients, int actual)
    char response[BUF_SIZE];
    protocol_create_message(response, BUF_SIZE, MSG_LIST_USERS, user_list);
    write_client(sock, response);
-   
+
    printf("%s[list]%s Sent user list to client\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET);
 }
 
-void handle_message_command(int sock, Client *clients, Client sender, int actual, const char *message)
+void handle_message_command(int sock, Client *clients, Client sender, int client_count, const char *message)
 {
    /* Send acknowledgment to sender */
    char ack[BUF_SIZE];
    protocol_create_message(ack, BUF_SIZE, MSG_INFO, "Message received");
    write_client(sock, ack);
-   
+
    /* Broadcast message to all other clients */
    char formatted_msg[BUF_SIZE];
    snprintf(formatted_msg, BUF_SIZE, "%s: %s", sender.name, message);
-   
+
    char broadcast[BUF_SIZE];
    protocol_create_message(broadcast, BUF_SIZE, MSG_CHAT, formatted_msg);
-   
-   for (int i = 0; i < actual; i++)
+
+   for (int i = 0; i < client_count; i++)
    {
       /* Send to all clients except sender */
       if (sender.sock != clients[i].sock)
@@ -597,22 +385,22 @@ void handle_message_command(int sock, Client *clients, Client sender, int actual
          write_client(clients[i].sock, broadcast);
       }
    }
-   
-   printf("%s[broadcast]%s Message from %s sent to %d clients\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, sender.name, actual - 1);
+
+   printf("%s[broadcast]%s Message from %s sent to %d clients\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, sender.name, client_count - 1);
 }
 
-int is_username_unique(Client *clients, int actual, const char *username)
+int is_username_unique(Client *clients, int client_count, const char *username)
 {
    /* Check if username already exists */
-   for (int i = 0; i < actual; i++)
+   for (int i = 0; i < client_count; i++)
    {
       if (strcmp(clients[i].name, username) == 0)
       {
-         return 0;  /* Username already exists - not unique */
+         return 0; /* Username already exists - not unique */
       }
    }
-   
-   return 1;  /* Username is unique */
+
+   return 1; /* Username is unique */
 }
 
 void handle_bio_command(int sock, Client *clients, int client_index, const char *bio_text)
@@ -625,7 +413,7 @@ void handle_bio_command(int sock, Client *clients, int client_index, const char 
       write_client(sock, error_msg);
       return;
    }
-   
+
    /* Check bio length */
    if (strlen(bio_text) > MAX_BIO_LEN - 1)
    {
@@ -635,21 +423,21 @@ void handle_bio_command(int sock, Client *clients, int client_index, const char 
       write_client(sock, error_msg);
       return;
    }
-   
+
    /* Update the bio for the current user */
    strncpy(clients[client_index].bio, bio_text, MAX_BIO_LEN - 1);
    clients[client_index].bio[MAX_BIO_LEN - 1] = 0;
-   
+
    /* Send confirmation message to the user */
    char ack[BUF_SIZE];
    snprintf(ack, BUF_SIZE, "Bio updated: %s", clients[client_index].bio);
    protocol_create_message(ack, BUF_SIZE, MSG_BIO_SET, ack);
    write_client(sock, ack);
-   
+
    printf("%s[bio]%s %s updated bio: %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, clients[client_index].name, clients[client_index].bio);
 }
 
-void handle_getbio_command(int sock, Client *clients, int actual, const char *username)
+void handle_getbio_command(int sock, Client *clients, int client_count, const char *username)
 {
    /* Validate username */
    if (username == NULL || strlen(username) == 0)
@@ -662,7 +450,7 @@ void handle_getbio_command(int sock, Client *clients, int actual, const char *us
 
    /* Find the user among connected clients */
    int found_index = -1;
-   for (int i = 0; i < actual; i++)
+   for (int i = 0; i < client_count; i++)
    {
       if (strcmp(clients[i].name, username) == 0)
       {
@@ -697,7 +485,7 @@ void handle_getbio_command(int sock, Client *clients, int actual, const char *us
    write_client(sock, response);
 }
 
-void handle_pm_command(int sock, Client *clients, Client sender, int actual, const char *args)
+void handle_pm_command(int sock, Client *clients, Client sender, int client_count, const char *args)
 {
    /* Validate args: expect "<username> <message>" */
    if (args == NULL || strlen(args) == 0)
@@ -753,7 +541,7 @@ void handle_pm_command(int sock, Client *clients, Client sender, int actual, con
 
    /* Find target client */
    int target_index = -1;
-   for (int i = 0; i < actual; i++)
+   for (int i = 0; i < client_count; i++)
    {
       if (strcmp(clients[i].name, target) == 0)
       {
@@ -788,140 +576,399 @@ void handle_pm_command(int sock, Client *clients, Client sender, int actual, con
    write_client(sock, to_sender_msg);
 }
 
-void handle_challenge_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+void handle_challenge_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   if (clients[client_index].status != CLIENT_IDLE) {
-      notify(sock, MSG_ERROR, "You can't challenge while in a game or awaiting acceptance");
+   if (clients[client_index].status == CLIENT_IN_MATCH)
+   {
+      notify(sock, MSG_ERROR, "You can't challenge while in a game");
       return;
    }
-   if (clients[client_index].pending_challenge_to[0] != '\0') {
-      notify(sock, MSG_ERROR, "You already have a pending challenge to %s", clients[client_index].pending_challenge_to);
-      return;
-   }
-   if (!target_name || strlen(target_name) == 0) {
+   if (!target_name || strlen(target_name) == 0)
+   {
       notify(sock, MSG_ERROR, "Usage: challenge <username>");
       return;
    }
-   if (strcmp(target_name, clients[client_index].name) == 0) {
+   if (strcmp(target_name, clients[client_index].name) == 0)
+   {
       notify(sock, MSG_ERROR, "You cannot challenge yourself");
       return;
    }
-   int t = find_client_index_by_name(clients, actual, target_name);
-   if (t == -1) {
+
+   /* Check if already challenged this user */
+   for (int i = 0; i < clients[client_index].pending_challenge_to_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_to[i], target_name) == 0)
+      {
+         notify(sock, MSG_ERROR, "You already challenged %s", target_name);
+         return;
+      }
+   }
+
+   /* Check if at max pending challenges sent */
+   if (clients[client_index].pending_challenge_to_count >= MAX_CHALLENGES)
+   {
+      notify(sock, MSG_ERROR, "Too many pending challenges");
+      return;
+   }
+
+   int t = find_client_index_by_name(clients, client_count, target_name);
+   if (t == -1)
+   {
       notify(sock, MSG_ERROR, "User '%s' not found", target_name);
       return;
    }
-   if (clients[t].status != CLIENT_IDLE) {
-      notify(sock, MSG_ERROR, "User '%s' is busy", clients[t].name);
+   if (clients[t].status == CLIENT_IN_MATCH)
+   {
+      notify(sock, MSG_ERROR, "User '%s' is busy in a game", clients[t].name);
       return;
    }
-   if (clients[t].pending_challenge_from[0] != '\0') {
-      notify(sock, MSG_ERROR, "User '%s' already has a pending challenge", clients[t].name);
+
+   /* Check if target already has pending challenge from this user */
+   for (int i = 0; i < clients[t].pending_challenge_from_count; i++)
+   {
+      if (strcmp(clients[t].pending_challenge_from[i], clients[client_index].name) == 0)
+      {
+         notify(sock, MSG_ERROR, "Challenge already pending to %s", target_name);
+         return;
+      }
+   }
+
+   /* Check if this user already has pending challenge to the target (prevent mutual challenges) */
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_from[i], target_name) == 0)
+      {
+         notify(sock, MSG_ERROR, "%s already challenged you; cannot send a reverse challenge", target_name);
+         return;
+      }
+   }
+
+   /* Check if target is at max pending challenges received */
+   if (clients[t].pending_challenge_from_count >= MAX_CHALLENGES)
+   {
+      notify(sock, MSG_ERROR, "User '%s' has too many pending challenges", clients[t].name);
       return;
    }
-   strncpy(clients[client_index].pending_challenge_to, clients[t].name, MAX_USERNAME_LEN-1);
-   clients[client_index].pending_challenge_to[MAX_USERNAME_LEN-1] = '\0';
-   strncpy(clients[t].pending_challenge_from, clients[client_index].name, MAX_USERNAME_LEN-1);
-   clients[t].pending_challenge_from[MAX_USERNAME_LEN-1] = '\0';
-   clients[client_index].status = CLIENT_WAITING_FOR_ACCEPT;
+
+   /* Add challenge */
+   strncpy(clients[client_index].pending_challenge_to[clients[client_index].pending_challenge_to_count],
+           clients[t].name, MAX_USERNAME_LEN - 1);
+   clients[client_index].pending_challenge_to[clients[client_index].pending_challenge_to_count][MAX_USERNAME_LEN - 1] = '\0';
+   clients[client_index].pending_challenge_to_count++;
+
+   strncpy(clients[t].pending_challenge_from[clients[t].pending_challenge_from_count],
+           clients[client_index].name, MAX_USERNAME_LEN - 1);
+   clients[t].pending_challenge_from[clients[t].pending_challenge_from_count][MAX_USERNAME_LEN - 1] = '\0';
+   clients[t].pending_challenge_from_count++;
+
    notify(sock, MSG_INFO, "Challenge sent to %s", clients[t].name);
    notify(clients[t].sock, MSG_CHALLENGE, "from %s", clients[client_index].name);
 }
 
-void handle_cancel_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+void handle_cancel_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   (void)actual; // unused
-   if (clients[client_index].pending_challenge_to[0] == '\0') {
-      notify(sock, MSG_ERROR, "No pending challenge to cancel");
+   (void)client_count; // unused
+   if (clients[client_index].pending_challenge_to_count == 0)
+   {
+      notify(sock, MSG_ERROR, "No pending challenges to cancel");
       return;
    }
-   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_to) != 0) {
-      notify(sock, MSG_ERROR, "Your pending challenge is to %s", clients[client_index].pending_challenge_to);
+   if (!target_name || strlen(target_name) == 0)
+   {
+      notify(sock, MSG_ERROR, "Usage: cancel <username>");
       return;
    }
-   int t = find_client_index_by_name(clients, actual, clients[client_index].pending_challenge_to);
-   if (t != -1) {
+
+   /* Find the challenge to this target */
+   int found_idx = -1;
+   for (int i = 0; i < clients[client_index].pending_challenge_to_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_to[i], target_name) == 0)
+      {
+         found_idx = i;
+         break;
+      }
+   }
+
+   if (found_idx == -1)
+   {
+      notify(sock, MSG_ERROR, "No pending challenge to %s", target_name);
+      return;
+   }
+
+   /* Find target user */
+   int t = find_client_index_by_name(clients, client_count, target_name);
+   if (t != -1)
+   {
+      /* Remove from target's pending_challenge_from */
+      for (int i = 0; i < clients[t].pending_challenge_from_count; i++)
+      {
+         if (strcmp(clients[t].pending_challenge_from[i], clients[client_index].name) == 0)
+         {
+            /* Shift remaining elements */
+            for (int j = i; j < clients[t].pending_challenge_from_count - 1; j++)
+            {
+               strncpy(clients[t].pending_challenge_from[j],
+                       clients[t].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+            }
+            clients[t].pending_challenge_from_count--;
+            break;
+         }
+      }
       notify(clients[t].sock, MSG_CHALLENGE_RESPONSE, "%s cancelled the challenge", clients[client_index].name);
-      clients[t].pending_challenge_from[0] = '\0';
    }
-   clients[client_index].pending_challenge_to[0] = '\0';
-   clients[client_index].status = CLIENT_IDLE;
-   notify(sock, MSG_INFO, "Challenge cancelled");
+
+   /* Remove from sender's pending_challenge_to */
+   for (int j = found_idx; j < clients[client_index].pending_challenge_to_count - 1; j++)
+   {
+      strncpy(clients[client_index].pending_challenge_to[j],
+              clients[client_index].pending_challenge_to[j + 1], MAX_USERNAME_LEN - 1);
+   }
+   clients[client_index].pending_challenge_to_count--;
+
+   notify(sock, MSG_INFO, "Challenge to %s cancelled", target_name);
 }
 
-void handle_refuse_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+void handle_refuse_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   if (clients[client_index].pending_challenge_from[0] == '\0') {
-      notify(sock, MSG_ERROR, "You have no incoming challenge");
+   if (clients[client_index].pending_challenge_from_count == 0)
+   {
+      notify(sock, MSG_ERROR, "You have no incoming challenges");
       return;
    }
-   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_from) != 0) {
-      notify(sock, MSG_ERROR, "Incoming challenge is from %s", clients[client_index].pending_challenge_from);
+   if (!target_name || strlen(target_name) == 0)
+   {
+      notify(sock, MSG_ERROR, "Usage: refuse <username>");
       return;
    }
-   int s = find_client_index_by_name(clients, actual, clients[client_index].pending_challenge_from);
-   if (s != -1) {
+
+   /* Find the challenge from this target */
+   int found_idx = -1;
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_from[i], target_name) == 0)
+      {
+         found_idx = i;
+         break;
+      }
+   }
+
+   if (found_idx == -1)
+   {
+      notify(sock, MSG_ERROR, "No incoming challenge from %s", target_name);
+      return;
+   }
+
+   /* Find challenger */
+   int s = find_client_index_by_name(clients, client_count, target_name);
+   if (s != -1)
+   {
+      /* Remove from challenger's pending_challenge_to */
+      for (int i = 0; i < clients[s].pending_challenge_to_count; i++)
+      {
+         if (strcmp(clients[s].pending_challenge_to[i], clients[client_index].name) == 0)
+         {
+            /* Shift remaining elements */
+            for (int j = i; j < clients[s].pending_challenge_to_count - 1; j++)
+            {
+               strncpy(clients[s].pending_challenge_to[j],
+                       clients[s].pending_challenge_to[j + 1], MAX_USERNAME_LEN - 1);
+            }
+            clients[s].pending_challenge_to_count--;
+            break;
+         }
+      }
+
       notify(clients[s].sock, MSG_CHALLENGE_RESPONSE, "%s refused your challenge", clients[client_index].name);
-      clients[s].pending_challenge_to[0] = '\0';
-      clients[s].status = CLIENT_IDLE;
    }
-   clients[client_index].pending_challenge_from[0] = '\0';
-   notify(sock, MSG_INFO, "Challenge refused");
+
+   /* Remove from receiver's pending_challenge_from */
+   for (int j = found_idx; j < clients[client_index].pending_challenge_from_count - 1; j++)
+   {
+      strncpy(clients[client_index].pending_challenge_from[j],
+              clients[client_index].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+   }
+   clients[client_index].pending_challenge_from_count--;
+
+   notify(sock, MSG_INFO, "Challenge from %s refused", target_name);
 }
 
-void handle_accept_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+void handle_accept_command(int sock, Client *clients, int client_index, int client_count, const char *target_name, Match *matches, int *match_count)
 {
-   if (clients[client_index].pending_challenge_from[0] == '\0') {
-      notify(sock, MSG_ERROR, "You have no incoming challenge");
+   if (clients[client_index].pending_challenge_from_count == 0)
+   {
+      notify(sock, MSG_ERROR, "You have no incoming challenges");
       return;
    }
-   if (target_name && strlen(target_name) > 0 && strcmp(target_name, clients[client_index].pending_challenge_from) != 0) {
-      notify(sock, MSG_ERROR, "Incoming challenge is from %s", clients[client_index].pending_challenge_from);
+   if (!target_name || strlen(target_name) == 0)
+   {
+      notify(sock, MSG_ERROR, "Usage: accept <username>");
       return;
    }
-   int s = find_client_index_by_name(clients, actual, clients[client_index].pending_challenge_from);
-   if (s == -1) {
+
+   /* Find the challenge from this target */
+   int found_idx = -1;
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_from[i], target_name) == 0)
+      {
+         found_idx = i;
+         break;
+      }
+   }
+
+   if (found_idx == -1)
+   {
+      notify(sock, MSG_ERROR, "No incoming challenge from %s", target_name);
+      return;
+   }
+
+   int s = find_client_index_by_name(clients, client_count, target_name);
+   if (s == -1)
+   {
       notify(sock, MSG_ERROR, "Challenger disconnected");
-      clients[client_index].pending_challenge_from[0] = '\0';
+      /* Remove the stale challenge */
+      for (int j = found_idx; j < clients[client_index].pending_challenge_from_count - 1; j++)
+      {
+         strncpy(clients[client_index].pending_challenge_from[j],
+                 clients[client_index].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+      }
+      clients[client_index].pending_challenge_from_count--;
       return;
    }
-   // clear challenge states
-   clients[s].pending_challenge_to[0] = '\0';
-   clients[client_index].pending_challenge_from[0] = '\0';
-   // start match
-   start_match(clients, s, client_index);
+
+   /* Remove from challenger's pending_challenge_to */
+   for (int i = 0; i < clients[s].pending_challenge_to_count; i++)
+   {
+      if (strcmp(clients[s].pending_challenge_to[i], clients[client_index].name) == 0)
+      {
+         /* Shift remaining elements */
+         for (int j = i; j < clients[s].pending_challenge_to_count - 1; j++)
+         {
+            strncpy(clients[s].pending_challenge_to[j],
+                    clients[s].pending_challenge_to[j + 1], MAX_USERNAME_LEN - 1);
+         }
+         clients[s].pending_challenge_to_count--;
+         break;
+      }
+   }
+
+   /* Remove from receiver's pending_challenge_from */
+   for (int j = found_idx; j < clients[client_index].pending_challenge_from_count - 1; j++)
+   {
+      strncpy(clients[client_index].pending_challenge_from[j],
+              clients[client_index].pending_challenge_from[j + 1], MAX_USERNAME_LEN - 1);
+   }
+   clients[client_index].pending_challenge_from_count--;
+
+   /* Automatically refuse all OTHER incoming challenges */
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      int other_challenger_idx = find_client_index_by_name(clients, client_count, 
+                                                            clients[client_index].pending_challenge_from[i]);
+      if (other_challenger_idx != -1)
+      {
+         /* Remove from other challenger's pending_challenge_to */
+         for (int j = 0; j < clients[other_challenger_idx].pending_challenge_to_count; j++)
+         {
+            if (strcmp(clients[other_challenger_idx].pending_challenge_to[j], clients[client_index].name) == 0)
+            {
+               for (int k = j; k < clients[other_challenger_idx].pending_challenge_to_count - 1; k++)
+               {
+                  strncpy(clients[other_challenger_idx].pending_challenge_to[k],
+                          clients[other_challenger_idx].pending_challenge_to[k + 1], MAX_USERNAME_LEN - 1);
+               }
+               clients[other_challenger_idx].pending_challenge_to_count--;
+               break;
+            }
+         }
+         
+         /* Notify other challenger of refusal */
+         notify(clients[other_challenger_idx].sock, MSG_CHALLENGE_RESPONSE, 
+                "%s accepted another challenge and refused yours", clients[client_index].name);
+      }
+   }
+   
+   /* Clear all remaining incoming challenges */
+   clients[client_index].pending_challenge_from_count = 0;
+
+   /* Automatically cancel all outgoing challenges */
+   for (int i = 0; i < clients[client_index].pending_challenge_to_count; i++)
+   {
+      int challenged_idx = find_client_index_by_name(clients, client_count, 
+                                                      clients[client_index].pending_challenge_to[i]);
+      if (challenged_idx != -1)
+      {
+         /* Remove from challenged player's pending_challenge_from */
+         for (int j = 0; j < clients[challenged_idx].pending_challenge_from_count; j++)
+         {
+            if (strcmp(clients[challenged_idx].pending_challenge_from[j], clients[client_index].name) == 0)
+            {
+               for (int k = j; k < clients[challenged_idx].pending_challenge_from_count - 1; k++)
+               {
+                  strncpy(clients[challenged_idx].pending_challenge_from[k],
+                          clients[challenged_idx].pending_challenge_from[k + 1], MAX_USERNAME_LEN - 1);
+               }
+               clients[challenged_idx].pending_challenge_from_count--;
+               break;
+            }
+         }
+         
+         /* Notify challenged player of cancellation */
+         notify(clients[challenged_idx].sock, MSG_CHALLENGE_RESPONSE, 
+                "%s cancelled their challenge (accepted another match)", clients[client_index].name);
+      }
+   }
+   
+   /* Clear all outgoing challenges */
+   clients[client_index].pending_challenge_to_count = 0;
+   clients[client_index].status = CLIENT_IDLE;
+
+   /* Start the match */
+   start_match(clients, s, client_index, matches, match_count);
 }
 
-static Match* get_match_by_id(int id) {
-   if (id < 0 || id >= match_count) return NULL;
+Match *get_match_by_id(int id, Match *matches, int match_count)
+{
+   if (id < 0 || id >= match_count)
+      return NULL;
    return &matches[id];
 }
 
-void handle_move_command(int sock, Client *clients, int client_index, int actual, const char *pit_str)
+void handle_move_command(int sock, Client *clients, int client_index, int client_count, const char *pit_str, Match *matches, int match_count)
 {
-   (void)actual; // unused
-   if (clients[client_index].status != CLIENT_IN_MATCH) {
+   (void)client_count; // unused
+   if (clients[client_index].status != CLIENT_IN_MATCH)
+   {
       notify(sock, MSG_ERROR, "You are not in a game");
       return;
    }
-   if (!clients[client_index].is_turn) {
+   if (!clients[client_index].is_turn)
+   {
       notify(sock, MSG_ERROR, "Not your turn");
       return;
    }
-   if (!pit_str || strlen(pit_str)==0) {
+   if (!pit_str || strlen(pit_str) == 0)
+   {
       notify(sock, MSG_ERROR, "Usage: move <pit>");
       return;
    }
    int pit = atoi(pit_str);
-   Match *m = get_match_by_id(clients[client_index].current_match);
-   if (!m) { notify(sock, MSG_ERROR, "Internal error: match missing"); return; }
+   Match *m = get_match_by_id(clients[client_index].current_match, matches, match_count);
+   if (!m)
+   {
+      notify(sock, MSG_ERROR, "Internal error: match missing");
+      return;
+   }
    int is_player_a = (client_index == m->player1_index);
    int logical_player = is_player_a ? 0 : 1; // map to board.current_player
-   if (m->board.current_player != logical_player) {
+   if (m->board.current_player != logical_player)
+   {
       notify(sock, MSG_ERROR, "Not your turn");
       return;
    }
-   if (!is_valid_move(&m->board, pit)) {
+   if (!is_valid_move(&m->board, pit))
+   {
       notify(sock, MSG_ERROR, "Invalid move");
       return;
    }
@@ -933,12 +980,14 @@ void handle_move_command(int sock, Client *clients, int client_index, int actual
    notify(clients[m->player1_index].sock, MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
    notify(clients[m->player2_index].sock, MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
    // notify watchers too
-   for (int w = 0; w < m->watcher_count; w++) {
+   for (int w = 0; w < m->watcher_count; w++)
+   {
       notify(m->watchers[w], MSG_MOVE, "%s played pit %d", clients[client_index].name, pit);
    }
    broadcast_board(m, clients);
    // record board after move for replay
-   if (m->replay_move_count < MAX_MOVES) {
+   if (m->replay_move_count < MAX_MOVES)
+   {
       char snap[BUF_SIZE];
       char move_info[64];
       snprintf(move_info, sizeof(move_info), "(move by %s pit %d)", clients[client_index].name, pit);
@@ -946,39 +995,52 @@ void handle_move_command(int sock, Client *clients, int client_index, int actual
       // prepend move info line
       char combined[BUF_SIZE];
       snprintf(combined, sizeof(combined), "%s\n%s", move_info, snap);
-      strncpy(m->replay_boards[m->replay_move_count], combined, BUF_SIZE-1);
-      m->replay_boards[m->replay_move_count][BUF_SIZE-1] = '\0';
+      strncpy(m->replay_boards[m->replay_move_count], combined, BUF_SIZE - 1);
+      m->replay_boards[m->replay_move_count][BUF_SIZE - 1] = '\0';
       m->replay_move_count++;
    }
-   if (is_game_over(&m->board)) {
+   if (is_game_over(&m->board))
+   {
       // announce winner
       const char *winner = NULL;
-      if (m->board.score[0] > m->board.score[1]) winner = clients[m->player1_index].name;
-      else if (m->board.score[1] > m->board.score[0]) winner = clients[m->player2_index].name;
+      if (m->board.score[0] > m->board.score[1])
+         winner = clients[m->player1_index].name;
+      else if (m->board.score[1] > m->board.score[0])
+         winner = clients[m->player2_index].name;
       char payload[BUF_SIZE];
-      if (winner) snprintf(payload, sizeof(payload), "Game over. Winner: %s (%d-%d)", winner, m->board.score[0], m->board.score[1]);
-      else snprintf(payload, sizeof(payload), "Game over. Draw (%d-%d)", m->board.score[0], m->board.score[1]);
+      if (winner)
+         snprintf(payload, sizeof(payload), "Game over. Winner: %s (%d-%d)", winner, m->board.score[0], m->board.score[1]);
+      else
+         snprintf(payload, sizeof(payload), "Game over. Draw (%d-%d)", m->board.score[0], m->board.score[1]);
       notify(clients[m->player1_index].sock, MSG_GAME_OVER, "%s", payload);
       notify(clients[m->player2_index].sock, MSG_GAME_OVER, "%s", payload);
       // update wins count
-      if (m->board.score[0] > m->board.score[1]) {
+      if (m->board.score[0] > m->board.score[1])
+      {
          clients[m->player1_index].wins++;
-      } else if (m->board.score[1] > m->board.score[0]) {
+      }
+      else if (m->board.score[1] > m->board.score[0])
+      {
          clients[m->player2_index].wins++;
       }
       end_match(m, clients);
    }
 }
 
-void handle_quit_command(int sock, Client *clients, int client_index, int actual)
+void handle_quit_command(int sock, Client *clients, int client_index, int client_count, Match *matches, int match_count)
 {
-   (void)actual; // unused
-   if (clients[client_index].status != CLIENT_IN_MATCH) {
+   (void)client_count; // unused
+   if (clients[client_index].status != CLIENT_IN_MATCH)
+   {
       notify(sock, MSG_ERROR, "You are not in a game");
       return;
    }
-   Match *m = get_match_by_id(clients[client_index].current_match);
-   if (!m) { notify(sock, MSG_ERROR, "Internal error: match missing"); return; }
+   Match *m = get_match_by_id(clients[client_index].current_match, matches, match_count);
+   if (!m)
+   {
+      notify(sock, MSG_ERROR, "Internal error: match missing");
+      return;
+   }
    int other = (client_index == m->player1_index) ? m->player2_index : m->player1_index;
    notify(clients[other].sock, MSG_GAME_OVER, "%s quit the game", clients[client_index].name);
    notify(sock, MSG_GAME_OVER, "You quit the game");
@@ -989,48 +1051,57 @@ void handle_quit_command(int sock, Client *clients, int client_index, int actual
    char payload_quit[BUF_SIZE];
    snprintf(payload_quit, sizeof(payload_quit), "%s quit the game", clients[client_index].name);
    protocol_create_message(msg_quit, sizeof(msg_quit), MSG_GAME_OVER, payload_quit);
-   for (int w = 0; w < m->watcher_count; w++) {
+   for (int w = 0; w < m->watcher_count; w++)
+   {
       write_client(m->watchers[w], msg_quit);
    }
    end_match(m, clients);
 }
 
-void handle_watch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str)
+void handle_watch_command(int sock, Client *clients, int client_index, int client_count, const char *match_id_str, Match *matches, int match_count)
 {
-   (void)actual; // unused directly
-   if (!match_id_str || strlen(match_id_str) == 0) {
+   (void)client_count; // unused directly
+   if (!match_id_str || strlen(match_id_str) == 0)
+   {
       notify(sock, MSG_ERROR, "Usage: watch <matchId>");
       return;
    }
+   // Prevent watching any match while playing in a match
+   if (clients[client_index].status == CLIENT_IN_MATCH)
+   {
+      notify(sock, MSG_ERROR, "You cannot watch matches while playing in a match");
+      return;
+   }
    int id = atoi(match_id_str);
-   if (id < 0 || id >= match_count) {
+   if (id < 0 || id >= match_count)
+   {
       notify(sock, MSG_ERROR, "Match %d not found", id);
       return;
    }
    Match *m = &matches[id];
-   // Disallow watching own match (already receiving updates)
-   if (clients[client_index].current_match == id && clients[client_index].status == CLIENT_IN_MATCH) {
-      notify(sock, MSG_ERROR, "You are already playing in this match");
-      return;
-   }
    // Enforce privacy: if match is private, must be friend with at least one player (both acceptable)
-   if (m->private_mode) {
+   if (m->private_mode)
+   {
       const char *watcher_name = clients[client_index].name;
       int ok = is_friend(&clients[m->player1_index], watcher_name) || is_friend(&clients[m->player2_index], watcher_name);
-      if (!ok) {
+      if (!ok)
+      {
          notify(sock, MSG_ERROR, "This match is private; only friends can watch");
          return;
       }
    }
    // Add watcher if not already
-   for (int i = 0; i < m->watcher_count; i++) {
-      if (m->watchers[i] == clients[client_index].sock) {
+   for (int i = 0; i < m->watcher_count; i++)
+   {
+      if (m->watchers[i] == clients[client_index].sock)
+      {
          // already watching
          broadcast_board(m, clients); // resend board
          return;
       }
    }
-   if (m->watcher_count >= MAX_CLIENTS) {
+   if (m->watcher_count >= MAX_CLIENTS)
+   {
       notify(sock, MSG_ERROR, "Too many watchers for this match");
       return;
    }
@@ -1039,63 +1110,112 @@ void handle_watch_command(int sock, Client *clients, int client_index, int actua
    broadcast_board(m, clients);
 }
 
-void handle_unwatch_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str)
+void handle_unwatch_command(int sock, Client *clients, int client_index, int client_count, const char *match_id_str, Match *matches, int match_count)
 {
-   (void)actual; // unused directly
-   if (!match_id_str || strlen(match_id_str) == 0) {
+   (void)client_count; // unused directly
+   if (!match_id_str || strlen(match_id_str) == 0)
+   {
       notify(sock, MSG_ERROR, "Usage: unwatch <matchId>");
       return;
    }
    int id = atoi(match_id_str);
-   if (id < 0 || id >= match_count) {
+   if (id < 0 || id >= match_count)
+   {
       notify(sock, MSG_ERROR, "Match %d not found", id);
       return;
    }
    Match *m = &matches[id];
    int sock_to_remove = clients[client_index].sock;
    int found = 0;
-   for (int i = 0; i < m->watcher_count; i++) {
-      if (m->watchers[i] == sock_to_remove) {
+   for (int i = 0; i < m->watcher_count; i++)
+   {
+      if (m->watchers[i] == sock_to_remove)
+      {
          // remove by shifting remaining
-         for (int j = i; j < m->watcher_count - 1; j++) {
-            m->watchers[j] = m->watchers[j+1];
+         for (int j = i; j < m->watcher_count - 1; j++)
+         {
+            m->watchers[j] = m->watchers[j + 1];
          }
          m->watcher_count--;
          found = 1;
          break;
       }
    }
-   if (!found) {
+   if (!found)
+   {
       notify(sock, MSG_ERROR, "You are not watching match %d", id);
       return;
    }
    notify(sock, MSG_INFO, "Stopped watching match #%d", id);
 }
 
-void handle_addfriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+void handle_addfriend_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   (void)actual;
-   if (!target_name || strlen(target_name) == 0) { notify(sock, MSG_ERROR, "Usage: addfriend <username>"); return; }
-   if (strcmp(target_name, clients[client_index].name) == 0) { notify(sock, MSG_ERROR, "Cannot friend yourself"); return; }
-   int t = find_client_index_by_name(clients, actual, target_name);
-   if (t == -1) { notify(sock, MSG_ERROR, "User '%s' not found", target_name); return; }
-   if (is_friend(&clients[client_index], target_name)) { notify(sock, MSG_INFO, "%s already in friends", target_name); return; }
-   if (clients[client_index].pending_friend_to[0] != '\0') { notify(sock, MSG_ERROR, "You already sent a friend request to %s", clients[client_index].pending_friend_to); return; }
-   if (clients[client_index].pending_friend_from[0] != '\0') { notify(sock, MSG_ERROR, "You have an incoming friend request from %s", clients[client_index].pending_friend_from); return; }
-   if (clients[t].pending_friend_to[0] != '\0' && strcmp(clients[t].pending_friend_to, clients[client_index].name) == 0) { notify(sock, MSG_ERROR, "You both sent requests; ask them to accept"); return; }
-   strncpy(clients[client_index].pending_friend_to, clients[t].name, MAX_USERNAME_LEN-1); clients[client_index].pending_friend_to[MAX_USERNAME_LEN-1]=0;
-   strncpy(clients[t].pending_friend_from, clients[client_index].name, MAX_USERNAME_LEN-1); clients[t].pending_friend_from[MAX_USERNAME_LEN-1]=0;
+   (void)client_count;
+   if (!target_name || strlen(target_name) == 0)
+   {
+      notify(sock, MSG_ERROR, "Usage: addfriend <username>");
+      return;
+   }
+   if (strcmp(target_name, clients[client_index].name) == 0)
+   {
+      notify(sock, MSG_ERROR, "Cannot friend yourself");
+      return;
+   }
+   int t = find_client_index_by_name(clients, client_count, target_name);
+   if (t == -1)
+   {
+      notify(sock, MSG_ERROR, "User '%s' not found", target_name);
+      return;
+   }
+   if (is_friend(&clients[client_index], target_name))
+   {
+      notify(sock, MSG_INFO, "%s already in friends", target_name);
+      return;
+   }
+   if (clients[client_index].pending_friend_to[0] != '\0')
+   {
+      notify(sock, MSG_ERROR, "You already sent a friend request to %s", clients[client_index].pending_friend_to);
+      return;
+   }
+   if (clients[client_index].pending_friend_from[0] != '\0')
+   {
+      notify(sock, MSG_ERROR, "You have an incoming friend request from %s", clients[client_index].pending_friend_from);
+      return;
+   }
+   if (clients[t].pending_friend_to[0] != '\0' && strcmp(clients[t].pending_friend_to, clients[client_index].name) == 0)
+   {
+      notify(sock, MSG_ERROR, "You both sent requests; ask them to accept");
+      return;
+   }
+   strncpy(clients[client_index].pending_friend_to, clients[t].name, MAX_USERNAME_LEN - 1);
+   clients[client_index].pending_friend_to[MAX_USERNAME_LEN - 1] = 0;
+   strncpy(clients[t].pending_friend_from, clients[client_index].name, MAX_USERNAME_LEN - 1);
+   clients[t].pending_friend_from[MAX_USERNAME_LEN - 1] = 0;
    notify(sock, MSG_FRIEND_REQUEST, "Friend request sent to %s", clients[t].name);
    notify(clients[t].sock, MSG_FRIEND_REQUEST, "Friend request from %s (acceptfriend %s / refusefriend %s)", clients[client_index].name, clients[client_index].name, clients[client_index].name);
 }
 
-void handle_acceptfriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+void handle_acceptfriend_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   (void)actual;
-   if (!target_name || strlen(target_name) == 0) { notify(sock, MSG_ERROR, "Usage: acceptfriend <username>"); return; }
-   if (clients[client_index].pending_friend_from[0] == '\0' || strcmp(clients[client_index].pending_friend_from, target_name) != 0) { notify(sock, MSG_ERROR, "No pending friend request from %s", target_name); return; }
-   int t = find_client_index_by_name(clients, actual, target_name);
-   if (t == -1) { notify(sock, MSG_ERROR, "User '%s' disconnected", target_name); clients[client_index].pending_friend_from[0]=0; return; }
+   (void)client_count;
+   if (!target_name || strlen(target_name) == 0)
+   {
+      notify(sock, MSG_ERROR, "Usage: acceptfriend <username>");
+      return;
+   }
+   if (clients[client_index].pending_friend_from[0] == '\0' || strcmp(clients[client_index].pending_friend_from, target_name) != 0)
+   {
+      notify(sock, MSG_ERROR, "No pending friend request from %s", target_name);
+      return;
+   }
+   int t = find_client_index_by_name(clients, client_count, target_name);
+   if (t == -1)
+   {
+      notify(sock, MSG_ERROR, "User '%s' disconnected", target_name);
+      clients[client_index].pending_friend_from[0] = 0;
+      return;
+   }
    add_friend(&clients[client_index], clients[t].name);
    add_friend(&clients[t], clients[client_index].name);
    clients[client_index].pending_friend_from[0] = '\0';
@@ -1104,13 +1224,22 @@ void handle_acceptfriend_command(int sock, Client *clients, int client_index, in
    notify(clients[t].sock, MSG_FRIEND_RESPONSE, "%s accepted your friend request", clients[client_index].name);
 }
 
-void handle_refusefriend_command(int sock, Client *clients, int client_index, int actual, const char *target_name)
+void handle_refusefriend_command(int sock, Client *clients, int client_index, int client_count, const char *target_name)
 {
-   (void)actual;
-   if (!target_name || strlen(target_name) == 0) { notify(sock, MSG_ERROR, "Usage: refusefriend <username>"); return; }
-   if (clients[client_index].pending_friend_from[0] == '\0' || strcmp(clients[client_index].pending_friend_from, target_name) != 0) { notify(sock, MSG_ERROR, "No pending friend request from %s", target_name); return; }
-   int t = find_client_index_by_name(clients, actual, target_name);
-   if (t != -1) {
+   (void)client_count;
+   if (!target_name || strlen(target_name) == 0)
+   {
+      notify(sock, MSG_ERROR, "Usage: refusefriend <username>");
+      return;
+   }
+   if (clients[client_index].pending_friend_from[0] == '\0' || strcmp(clients[client_index].pending_friend_from, target_name) != 0)
+   {
+      notify(sock, MSG_ERROR, "No pending friend request from %s", target_name);
+      return;
+   }
+   int t = find_client_index_by_name(clients, client_count, target_name);
+   if (t != -1)
+   {
       notify(clients[t].sock, MSG_FRIEND_RESPONSE, "%s refused your friend request", clients[client_index].name);
       clients[t].pending_friend_to[0] = '\0';
    }
@@ -1118,27 +1247,60 @@ void handle_refusefriend_command(int sock, Client *clients, int client_index, in
    notify(sock, MSG_FRIEND_RESPONSE, "Friend request from %s refused", target_name);
 }
 
-void handle_private_command(int sock, Client *clients, int client_index, int actual, const char *arg)
+void handle_private_command(int sock, Client *clients, int client_index, int client_count, const char *arg, Match *matches, int match_count)
 {
-   (void)actual;
-   if (clients[client_index].status != CLIENT_IN_MATCH) { notify(sock, MSG_ERROR, "You are not in a match"); return; }
-   Match *m = NULL; for (int i=0;i<match_count;i++){ if (matches[i].id == clients[client_index].current_match){ m=&matches[i]; break; } }
-   if (!m) { notify(sock, MSG_ERROR, "Internal: match not found"); return; }
-   if (!arg || strlen(arg)==0) { notify(sock, MSG_ERROR, "Usage: private on|off"); return; }
-   if (strcmp(arg, "on") == 0) {
+   (void)client_count;
+   if (clients[client_index].status != CLIENT_IN_MATCH)
+   {
+      notify(sock, MSG_ERROR, "You are not in a match");
+      return;
+   }
+   Match *m = NULL;
+   for (int i = 0; i < match_count; i++)
+   {
+      if (matches[i].id == clients[client_index].current_match)
+      {
+         m = &matches[i];
+         break;
+      }
+   }
+   if (!m)
+   {
+      notify(sock, MSG_ERROR, "Internal: match not found");
+      return;
+   }
+   if (!arg || strlen(arg) == 0)
+   {
+      notify(sock, MSG_ERROR, "Usage: private on|off");
+      return;
+   }
+   if (strcmp(arg, "on") == 0)
+   {
       m->private_mode = 1;
       // Remove non-friend watchers
-      for (int i = 0; i < m->watcher_count; ) {
+      for (int i = 0; i < m->watcher_count;)
+      {
          int wsock = m->watchers[i];
          // find client index by socket
-         int cindex = -1; for (int k=0;k<actual;k++){ if (clients[k].sock == wsock){ cindex = k; break; }}
-         if (cindex != -1) {
+         int cindex = -1;
+         for (int k = 0; k < client_count; k++)
+         {
+            if (clients[k].sock == wsock)
+            {
+               cindex = k;
+               break;
+            }
+         }
+         if (cindex != -1)
+         {
             const char *wname = clients[cindex].name;
             int ok = is_friend(&clients[m->player1_index], wname) || is_friend(&clients[m->player2_index], wname);
-            if (!ok) {
+            if (!ok)
+            {
                // notify and remove
                notify(wsock, MSG_INFO, "Removed from private match #%d", m->id);
-               for (int j=i; j < m->watcher_count-1; j++) m->watchers[j] = m->watchers[j+1];
+               for (int j = i; j < m->watcher_count - 1; j++)
+                  m->watchers[j] = m->watchers[j + 1];
                m->watcher_count--;
                continue; // don't increment i (shifted elements)
             }
@@ -1146,26 +1308,34 @@ void handle_private_command(int sock, Client *clients, int client_index, int act
          i++; // keep
       }
       notify(sock, MSG_INFO, "Match #%d now private", m->id);
-   } else if (strcmp(arg, "off") == 0) {
+   }
+   else if (strcmp(arg, "off") == 0)
+   {
       m->private_mode = 0;
       notify(sock, MSG_INFO, "Match #%d now public", m->id);
-   } else {
+   }
+   else
+   {
       notify(sock, MSG_ERROR, "Usage: private on|off");
    }
 }
 
-void handle_friends_command(int sock, Client *clients, int client_index, int actual)
+void handle_friends_command(int sock, Client *clients, int client_index, int client_count)
 {
-   (void)actual;
+   (void)client_count;
    char payload[BUF_SIZE];
-   if (clients[client_index].friend_count == 0) {
+   if (clients[client_index].friend_count == 0)
+   {
       snprintf(payload, sizeof(payload), "(no friends)");
-   } else {
+   }
+   else
+   {
       payload[0] = '\0';
-      for (int i = 0; i < clients[client_index].friend_count; i++) {
-         strncat(payload, clients[client_index].friends[i], sizeof(payload)-strlen(payload)-1);
+      for (int i = 0; i < clients[client_index].friend_count; i++)
+      {
+         strncat(payload, clients[client_index].friends[i], sizeof(payload) - strlen(payload) - 1);
          if (i < clients[client_index].friend_count - 1)
-            strncat(payload, ",", sizeof(payload)-strlen(payload)-1);
+            strncat(payload, ",", sizeof(payload) - strlen(payload) - 1);
       }
    }
    char msg[BUF_SIZE];
@@ -1173,29 +1343,43 @@ void handle_friends_command(int sock, Client *clients, int client_index, int act
    write_client(sock, msg);
 }
 
-void handle_ranking_command(int sock, Client *clients, int actual)
+void handle_ranking_command(int sock, Client *clients, int client_count)
 {
    int idx[MAX_CLIENTS];
-   for (int i = 0; i < actual; i++) idx[i] = i;
+   for (int i = 0; i < client_count; i++)
+      idx[i] = i;
    // simple selection sort by wins desc, then name asc
-   for (int i = 0; i < actual; i++) {
+   for (int i = 0; i < client_count; i++)
+   {
       int best = i;
-      for (int j = i + 1; j < actual; j++) {
+      for (int j = i + 1; j < client_count; j++)
+      {
          if (clients[idx[j]].wins > clients[idx[best]].wins ||
-             (clients[idx[j]].wins == clients[idx[best]].wins && strcmp(clients[idx[j]].name, clients[idx[best]].name) < 0)) {
+             (clients[idx[j]].wins == clients[idx[best]].wins && strcmp(clients[idx[j]].name, clients[idx[best]].name) < 0))
+         {
             best = j;
          }
       }
-      if (best != i) { int tmp = idx[i]; idx[i] = idx[best]; idx[best] = tmp; }
+      if (best != i)
+      {
+         int tmp = idx[i];
+         idx[i] = idx[best];
+         idx[best] = tmp;
+      }
    }
-   char payload[BUF_SIZE]; payload[0] = '\0';
-   if (actual == 0) {
+   char payload[BUF_SIZE];
+   payload[0] = '\0';
+   if (client_count == 0)
+   {
       snprintf(payload, sizeof(payload), "(no players)");
-   } else {
+   }
+   else
+   {
       char line[128];
-      for (int i = 0; i < actual; i++) {
-         snprintf(line, sizeof(line), "%d. %s - %d\n", i+1, clients[idx[i]].name, clients[idx[i]].wins);
-         strncat(payload, line, sizeof(payload)-strlen(payload)-1);
+      for (int i = 0; i < client_count; i++)
+      {
+         snprintf(line, sizeof(line), "%d. %s - %d\n", i + 1, clients[idx[i]].name, clients[idx[i]].wins);
+         strncat(payload, line, sizeof(payload) - strlen(payload) - 1);
       }
    }
    char msg[BUF_SIZE];
@@ -1203,37 +1387,43 @@ void handle_ranking_command(int sock, Client *clients, int actual)
    write_client(sock, msg);
 }
 
-void handle_watchreplay_command(int sock, Client *clients, int client_index, int actual, const char *match_id_str)
+void handle_watchreplay_command(int sock, Client *clients, int client_index, int client_count, const char *match_id_str, Match *matches, int match_count)
 {
-   (void)clients; (void)client_index; (void)actual;
-   if (!match_id_str || strlen(match_id_str) == 0) {
+   (void)clients;
+   (void)client_index;
+   (void)client_count;
+   if (!match_id_str || strlen(match_id_str) == 0)
+   {
       notify(sock, MSG_ERROR, "Usage: watchreplay <matchId>");
       return;
    }
    int id = atoi(match_id_str);
-   if (id < 0 || id >= match_count) {
+   if (id < 0 || id >= match_count)
+   {
       notify(sock, MSG_ERROR, "Replay %d not found", id);
       return;
    }
    Match *m = &matches[id];
-   if (m->replay_move_count == 0) {
+   if (m->replay_move_count == 0)
+   {
       notify(sock, MSG_ERROR, "No replay data for match %d", id);
       return;
    }
-   notify(sock, MSG_INFO, "Starting replay for match #%d (%s vs %s) moves:%d", m->id, clients[m->player1_index].name, clients[m->player2_index].name, m->replay_move_count-1);
-   for (int i = 0; i < m->replay_move_count; i++) {
+   notify(sock, MSG_INFO, "Starting replay for match #%d (%s vs %s) moves:%d", m->id, clients[m->player1_index].name, clients[m->player2_index].name, m->replay_move_count - 1);
+   for (int i = 0; i < m->replay_move_count; i++)
+   {
       char msg[BUF_SIZE];
       protocol_create_message(msg, sizeof(msg), MSG_REPLAY_DATA, m->replay_boards[i]);
       write_client(sock, msg);
    }
 }
 
-void handle_games_command(int sock, Client *clients, int actual)
+void handle_games_command(int sock, Client *clients, Match *matches, int match_count)
 {
-   (void)clients; // not needed directly, we reference via matches
    char list[BUF_SIZE];
    list[0] = '\0';
-   if (match_count == 0) {
+   if (match_count == 0)
+   {
       protocol_create_message(list, BUF_SIZE, MSG_MATCH_LIST, "No games running");
       write_client(sock, list);
       return;

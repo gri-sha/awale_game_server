@@ -12,174 +12,7 @@
 #include "../utils/constants.h"
 #include "../protocol/protocol.h"
 
-void app(const char *address, const char *name)
-{
-    int sock = init_connection(address);
-    char buffer[BUF_SIZE];
-    char payload[BUF_SIZE];
-    MessageType msg_type;
-
-    fd_set rdfs;
-
-    /* send our name */
-    write_to_server(sock, name);
-
-    /* Wait for connection acknowledgment */
-    int n = read_from_server(sock, buffer);
-    if (n > 0 && protocol_parse_message(buffer, &msg_type, payload))
-    {
-        if (msg_type == MSG_CONNECT_ACK)
-        {
-            printf("%s[connected]%s Connected to server as '%s'\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, name);
-            printf("%s[help]%s Type 'help' for available commands\n\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET);
-        }
-        else if (msg_type == MSG_ERROR)
-        {
-            printf("%s[error]%s Connection rejected: %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
-            end_connection(sock);
-            return;
-        }
-        else
-        {
-            printf("%s[error]%s Unexpected response from server\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
-            end_connection(sock);
-            return;
-        }
-    }
-    else
-    {
-        printf("%s[error]%s Failed to connect to server\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
-        end_connection(sock);
-        return;
-    }
-
-    while (1)
-    {
-        FD_ZERO(&rdfs);
-
-        /* add STDIN_FILENO */
-        FD_SET(STDIN_FILENO, &rdfs);
-
-        /* add the socket */
-        FD_SET(sock, &rdfs);
-
-        if (select(sock + 1, &rdfs, NULL, NULL, NULL) == -1)
-        {
-            perror("select()");
-            exit(errno);
-        }
-
-        // try to send a message (triggered by keyboard input)
-        if (FD_ISSET(STDIN_FILENO, &rdfs))
-        {
-            fflush(stdout);
-            fgets(buffer, BUF_SIZE - 1, stdin);
-            {
-                char *p = NULL;
-                p = strstr(buffer, "\n");
-                if (p != NULL)
-                {
-                    *p = 0;
-                }
-                else
-                {
-                    /* fclean */
-                    buffer[BUF_SIZE - 1] = 0;
-                }
-            }
-            process_command(sock, buffer);
-            // received a message from the server
-        }
-        else if (FD_ISSET(sock, &rdfs))
-        {
-            int n = read_from_server(sock, buffer);
-            /* server down */
-            if (n == 0)
-            {
-                printf("Server disconnected !\n");
-                break;
-            }
-
-            /* Parse server message */
-            char payload[BUF_SIZE];
-            MessageType msg_type;
-            if (protocol_parse_message(buffer, &msg_type, payload))
-            {
-                switch (msg_type)
-                {
-                case MSG_INFO:
-                    printf("%s[ack]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_CHAT:
-                    printf("%s[chat]%s %s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_LIST_USERS:
-                    printf("%s[users]%s\n%s\n\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
-                    fflush(stdout); // Force flush to terminal
-                    break;
-                case MSG_BIO_SET:
-                    printf("%s[bio]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_BIO_INFO:
-                    printf("%s[bio]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_PRIVATE_CHAT:
-                    printf("%s[pm]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_CHALLENGE:
-                    printf("%s[challenge]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_CHALLENGE_RESPONSE:
-                    printf("%s[challenge]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_BOARD_UPDATE:
-                    printf("%s[board]%s\n%s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_MOVE:
-                    printf("%s[move]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_MATCH_LIST:
-                    printf("%s[games]%s\n%s", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_FRIEND_REQUEST:
-                    printf("%s[friend]%s %s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_FRIEND_RESPONSE:
-                    printf("%s[friend]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_FRIEND_LIST:
-                    printf("%s[friends]%s %s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_RANK_LIST:
-                    printf("%s[ranking]%s\n%s", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_REPLAY_DATA:
-                    printf("%s[replay]%s\n%s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
-                    fflush(stdout);
-                    sleep(5); // pace replay steps by 5 seconds between frames
-                    break;
-                case MSG_GAME_OVER:
-                    printf("%s[game]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                case MSG_ERROR:
-                    printf("%s[error]%s %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, payload);
-                    break;
-                default:
-                    printf("%s[message]%s %s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
-                }
-            }
-            else
-            {
-                /* Fallback for unparseable messages */
-                printf("%s\n", buffer);
-            }
-        }
-    }
-
-    end_connection(sock);
-}
-
-int init_connection(const char *address)
+int init_connection(const char *address, int port)
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0); // create socket (to send and receive data)
     struct sockaddr_in sin = {0};               // socket address structure (to define server address)
@@ -199,7 +32,7 @@ int init_connection(const char *address)
     }
 
     sin.sin_addr = *(IN_ADDR *)hostinfo->h_addr;
-    sin.sin_port = htons(SERVER_PORT);
+    sin.sin_port = htons(port);
     sin.sin_family = AF_INET;
 
     if (connect(sock, (SOCKADDR *)&sin, sizeof(SOCKADDR)) == SOCKET_ERROR)
@@ -420,7 +253,9 @@ void process_command(int sock, const char *input)
             printf("%s[error]%s Usage: addfriend <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
             return;
         }
-        char cmd[BUF_SIZE]; snprintf(cmd, BUF_SIZE, "%s %s", CMD_ADD_FRIEND, args); write_to_server(sock, cmd);
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_ADD_FRIEND, args);
+        write_to_server(sock, cmd);
     }
     else if (strcmp(command, CMD_ACCEPT_FRIEND) == 0)
     {
@@ -429,7 +264,9 @@ void process_command(int sock, const char *input)
             printf("%s[error]%s Usage: acceptfriend <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
             return;
         }
-        char cmd[BUF_SIZE]; snprintf(cmd, BUF_SIZE, "%s %s", CMD_ACCEPT_FRIEND, args); write_to_server(sock, cmd);
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_ACCEPT_FRIEND, args);
+        write_to_server(sock, cmd);
     }
     else if (strcmp(command, CMD_REFUSE_FRIEND) == 0)
     {
@@ -438,7 +275,9 @@ void process_command(int sock, const char *input)
             printf("%s[error]%s Usage: refusefriend <user>\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
             return;
         }
-        char cmd[BUF_SIZE]; snprintf(cmd, BUF_SIZE, "%s %s", CMD_REFUSE_FRIEND, args); write_to_server(sock, cmd);
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_REFUSE_FRIEND, args);
+        write_to_server(sock, cmd);
     }
     else if (strcmp(command, CMD_PRIVATE) == 0)
     {
@@ -447,7 +286,9 @@ void process_command(int sock, const char *input)
             printf("%s[error]%s Usage: private on|off\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
             return;
         }
-        char cmd[BUF_SIZE]; snprintf(cmd, BUF_SIZE, "%s %s", CMD_PRIVATE, args); write_to_server(sock, cmd);
+        char cmd[BUF_SIZE];
+        snprintf(cmd, BUF_SIZE, "%s %s", CMD_PRIVATE, args);
+        write_to_server(sock, cmd);
     }
     else if (strcmp(command, CMD_FRIENDS) == 0)
     {
@@ -485,7 +326,7 @@ void process_command(int sock, const char *input)
         printf("    games              - List running games\n");
         printf("    watch <id>         - Spectate a running game\n");
         printf("    unwatch <id>       - Stop spectating a game\n");
-    printf("    watchreplay <id>   - Watch a finished game's replay (5s per move)\n");
+        printf("    watchreplay <id>   - Watch a finished game's replay (5s per move)\n");
         printf("    addfriend <user>   - Send friend request\n");
         printf("    acceptfriend <u>   - Accept friend request\n");
         printf("    refusefriend <u>   - Refuse friend request\n");

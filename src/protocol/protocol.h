@@ -3,17 +3,17 @@
 
 #include <stddef.h>
 
-/* 
+/*
  * MESSAGE PROTOCOL
  * ================
  * Format: "TYPE|payload" of "<command> <args...>"
- * 
+ *
  * Examples:
  *  Server sends:  "0|Welcome alice!"                    (MSG_CONNECT_ACK)
  *  Server sends:  "2|alice,bob,charlie"                (MSG_LIST_USERS)
  *  Server sends:  "1|alice: Hello everyone"            (MSG_CHAT)
  *  Server sends:  "8|Error: invalid move"              (MSG_ERROR)
- * 
+ *
  * Client sends (keywords):
  *  "list"                     → requests user list
  *  "msg hello everyone"       → chat message
@@ -26,7 +26,8 @@
  */
 
 /* MESSAGE TYPES - Server to Client responses */
-typedef enum {
+typedef enum
+{
     MSG_CONNECT_ACK = 0,
     MSG_CHAT = 1,
     MSG_LIST_USERS = 2,
@@ -43,9 +44,9 @@ typedef enum {
     MSG_MATCH_LIST = 13,
     MSG_FRIEND_REQUEST = 14,
     MSG_FRIEND_RESPONSE = 15,
-    MSG_FRIEND_LIST = 16
-    , MSG_RANK_LIST = 17
-    , MSG_REPLAY_DATA = 18
+    MSG_FRIEND_LIST = 16,
+    MSG_RANK_LIST = 17,
+    MSG_REPLAY_DATA = 18
 } MessageType;
 
 /* CLIENT COMMANDS - Client to Server requests */
