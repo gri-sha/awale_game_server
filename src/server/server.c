@@ -85,8 +85,9 @@ void broadcast_board(Match *m, Client *clients)
    write_client(clients[m->player2_index].sock, msg_p2);
    // Watchers: indicate whose turn
    const char *turn_name = p1_turn ? clients[m->player1_index].name : clients[m->player2_index].name;
+   const char *player_num = p1_turn ? "Player 1" : "Player 2";
    char payload_w[BUF_SIZE];
-   snprintf(payload_w, sizeof(payload_w), "%s\nTurn: %s", board_txt, turn_name);
+   snprintf(payload_w, sizeof(payload_w), "%s\nTurn: %s (%s)", board_txt, turn_name, player_num);
    char msg_w[BUF_SIZE];
    protocol_create_message(msg_w, sizeof(msg_w), MSG_BOARD_UPDATE, payload_w);
    for (int i = 0; i < m->watcher_count; i++)
@@ -1307,12 +1308,26 @@ void handle_private_command(int sock, Client *clients, int client_index, int cli
          }
          i++; // keep
       }
+      // Send acknowledgment to the player who set it to private
       notify(sock, MSG_INFO, "Match #%d now private", m->id);
+      
+      // Determine opponent index
+      int opponent_index = (client_index == m->player1_index) ? m->player2_index : m->player1_index;
+      
+      // Send notification to opponent
+      notify(clients[opponent_index].sock, MSG_INFO, "%s set the match to private", clients[client_index].name);
    }
    else if (strcmp(arg, "off") == 0)
    {
       m->private_mode = 0;
+      // Send acknowledgment to the player who set it to public
       notify(sock, MSG_INFO, "Match #%d now public", m->id);
+      
+      // Determine opponent index
+      int opponent_index = (client_index == m->player1_index) ? m->player2_index : m->player1_index;
+      
+      // Send notification to opponent
+      notify(clients[opponent_index].sock, MSG_INFO, "%s set the match to public", clients[client_index].name);
    }
    else
    {
