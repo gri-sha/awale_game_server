@@ -7,7 +7,6 @@
 typedef enum
 {
    CLIENT_IDLE,
-   CLIENT_WAITING_FOR_ACCEPT,
    CLIENT_IN_MATCH
 } ClientStatus;
 
@@ -16,7 +15,7 @@ typedef struct
    int sock;
    char name[MAX_USERNAME_LEN];
    char bio[MAX_BIO_LEN];
-   ClientStatus status; // CLIENT_IDLE, CLIENT_WAITING_FOR_ACCEPT, CLIENT_IN_MATCH
+   ClientStatus status; // CLIENT_IDLE, CLIENT_IN_MATCH
    int current_match;   // match id, -1 if not in a match
    // Challenge state - support multiple challenges
    char pending_challenge_to[MAX_CHALLENGES][MAX_USERNAME_LEN];   // usernames we challenged
@@ -47,7 +46,7 @@ typedef struct
 } Match;
 
 
-int init_connection(void);
+int init_connection(int port);
 void end_connection(int sock);
 int read_from_client(int sock, char *buffer);
 void write_client(int sock, const char *buffer);

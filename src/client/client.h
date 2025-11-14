@@ -1,7 +1,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-int init_connection(const char *address);
+int init_connection(const char *address, int port);
 void end_connection(int sock);
 int read_from_server(int sock, char *buffer);
 void write_to_server(int sock, const char *buffer);

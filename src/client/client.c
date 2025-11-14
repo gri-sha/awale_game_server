@@ -12,7 +12,7 @@
 #include "../utils/constants.h"
 #include "../protocol/protocol.h"
 
-int init_connection(const char *address)
+int init_connection(const char *address, int port)
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0); // create socket (to send and receive data)
     struct sockaddr_in sin = {0};               // socket address structure (to define server address)
@@ -32,7 +32,7 @@ int init_connection(const char *address)
     }
 
     sin.sin_addr = *(IN_ADDR *)hostinfo->h_addr;
-    sin.sin_port = htons(SERVER_PORT);
+    sin.sin_port = htons(port);
     sin.sin_family = AF_INET;
 
     if (connect(sock, (SOCKADDR *)&sin, sizeof(SOCKADDR)) == SOCKET_ERROR)

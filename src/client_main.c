@@ -12,14 +12,26 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+static void display_help_menu(char *exec_name)
+{
+   printf("Usage: %s --name <pseudo> [--ip <address>] [--port <port>]\n", exec_name);
+   printf("Options:\n");
+   printf("  --name <pseudo>        Username for the client (required)\n");
+   printf("  --ip <address>         Server IP address (default: %s)\n", SERVER_ADDR);
+   printf("  --port <port>          Server port number (default: %d)\n", SERVER_PORT);
+   printf("  --help                 Show this help message\n");
+}
+
 int main(int argc, char **argv)
 {
    const char *address = SERVER_ADDR;
+   int port = SERVER_PORT;
    const char *name = NULL;
 
    // Parse command-line arguments
-   // --name <pseudo> --ip <address>
+   // --name <pseudo> [--ip <address>] [--port <port>] [--help]
    // if ip not provided, use default SERVER_ADDR
+   // if port not provided, use default SERVER_PORT
    for (int i = 1; i < argc; i++)
    {
       if (strcmp(argv[i], "--name") == 0)
@@ -31,7 +43,8 @@ int main(int argc, char **argv)
          }
          else
          {
-            printf("Error: --name requires an argument\n");
+            fprintf(stderr, "%s[error]%s --name requires an argument\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            display_help_menu(argv[0]);
             return EXIT_FAILURE;
          }
       }
@@ -44,20 +57,53 @@ int main(int argc, char **argv)
          }
          else
          {
-            printf("Error: --ip requires an argument\n");
+            fprintf(stderr, "%s[error]%s --ip requires an argument\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            display_help_menu(argv[0]);
             return EXIT_FAILURE;
          }
+      }
+      else if (strcmp(argv[i], "--port") == 0)
+      {
+         if (i + 1 < argc)
+         {
+            port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535)
+            {
+               fprintf(stderr, "%s[error]%s Invalid port number: %s. Port must be between 1 and 65535.\n", COLOR_RED COLOR_BOLD, COLOR_RESET, argv[i + 1]);
+               display_help_menu(argv[0]);
+               return EXIT_FAILURE;
+            }
+            i++;
+         }
+         else
+         {
+            fprintf(stderr, "%s[error]%s --port requires a port number argument\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            display_help_menu(argv[0]);
+            ;
+            return EXIT_FAILURE;
+         }
+      }
+      else if (strcmp(argv[i], "--help") == 0)
+      {
+         display_help_menu(argv[0]);
+         return EXIT_SUCCESS;
+      }
+      else
+      {
+         fprintf(stderr, "%s[error]%s Unknown argument: %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, argv[i]);
+         display_help_menu(argv[0]);
+         return EXIT_FAILURE;
       }
    }
 
    if (name == NULL)
    {
-      printf("Usage: %s --name <pseudo> [--ip <address>]\n", argv[0]);
-      printf("Default IP: %s\n", SERVER_ADDR);
+      fprintf(stderr, "%s[error]%s Name is unknown.\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+      display_help_menu(argv[0]);
       return EXIT_FAILURE;
    }
 
-   int sock = init_connection(address);
+   int sock = init_connection(address, port);
    char buffer[BUF_SIZE];
    char payload[BUF_SIZE];
    MessageType msg_type;
@@ -86,7 +132,7 @@ int main(int argc, char **argv)
       {
          printf("%s[error]%s Unexpected response from server\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
          end_connection(sock);
-         return  EXIT_FAILURE;
+         return EXIT_FAILURE;
       }
    }
    else
@@ -176,7 +222,7 @@ int main(int argc, char **argv)
                printf("%s[challenge]%s %s\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, payload);
                break;
             case MSG_BOARD_UPDATE:
-               printf("%s[board]%s\n%s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
+               printf("%s[board]%s%s\n", COLOR_BLUE COLOR_BOLD, COLOR_RESET, payload);
                break;
             case MSG_MOVE:
                printf("%s[move]%s %s\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, payload);

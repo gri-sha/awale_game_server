@@ -67,13 +67,19 @@ void broadcast_board(Match *m, Client *clients)
    int p2_turn = (m->board.current_player == 1);
    // Player 1 message
    char payload_p1[BUF_SIZE];
-   snprintf(payload_p1, sizeof(payload_p1), "%s\n%s", board_txt, p1_turn ? "Your turn" : "Waiting...");
+   if (p1_turn)
+      snprintf(payload_p1, sizeof(payload_p1), "%s\n%s%sYour turn (Player 1)%s", board_txt, COLOR_BLUE, COLOR_BOLD, COLOR_RESET);
+   else
+      snprintf(payload_p1, sizeof(payload_p1), "%s\n%sWaiting...%s", board_txt, STYLE_DIM, COLOR_RESET);
    char msg_p1[BUF_SIZE];
    protocol_create_message(msg_p1, sizeof(msg_p1), MSG_BOARD_UPDATE, payload_p1);
    write_client(clients[m->player1_index].sock, msg_p1);
    // Player 2 message
    char payload_p2[BUF_SIZE];
-   snprintf(payload_p2, sizeof(payload_p2), "%s\n%s", board_txt, p2_turn ? "Your turn" : "Waiting...");
+   if (p2_turn)
+      snprintf(payload_p2, sizeof(payload_p2), "%s\n%s%sYour turn (Player 2)%s", board_txt, COLOR_BLUE, COLOR_BOLD, COLOR_RESET);
+   else
+      snprintf(payload_p2, sizeof(payload_p2), "%s\n%sWaiting...%s", board_txt, STYLE_DIM, COLOR_RESET);
    char msg_p2[BUF_SIZE];
    protocol_create_message(msg_p2, sizeof(msg_p2), MSG_BOARD_UPDATE, payload_p2);
    write_client(clients[m->player2_index].sock, msg_p2);
@@ -186,25 +192,26 @@ void remove_client(Client *clients, int to_remove, int *client_count)
 void send_message_to_all_clients(Client *clients, Client sender, int client_count, const char *buffer, char from_server)
 {
    int i = 0;
-   char message[BUF_SIZE];
-   message[0] = 0;
    for (i = 0; i < client_count; i++)
    {
       /* we don't send message to the sender */
       if (sender.sock != clients[i].sock)
       {
+         char message[BUF_SIZE];
+         message[0] = 0;
          if (from_server == 0)
          {
             strncpy(message, sender.name, BUF_SIZE - 1);
             strncat(message, " : ", sizeof message - strlen(message) - 1);
          }
          strncat(message, buffer, sizeof message - strlen(message) - 1);
+         printf("message: %s\n", message);
          write_client(clients[i].sock, message);
       }
    }
 }
 
-int init_connection(void)
+int init_connection(int port)
 {
    int sock = socket(AF_INET, SOCK_STREAM, 0);
    SOCKADDR_IN sin = {0};
@@ -216,7 +223,7 @@ int init_connection(void)
    }
 
    sin.sin_addr.s_addr = htonl(INADDR_ANY);
-   sin.sin_port = htons(SERVER_PORT);
+   sin.sin_port = htons(port);
    sin.sin_family = AF_INET;
 
    if (bind(sock, (SOCKADDR *)&sin, sizeof sin) == SOCKET_ERROR)
@@ -626,6 +633,16 @@ void handle_challenge_command(int sock, Client *clients, int client_index, int c
       }
    }
 
+   /* Check if this user already has pending challenge to the target (prevent mutual challenges) */
+   for (int i = 0; i < clients[client_index].pending_challenge_from_count; i++)
+   {
+      if (strcmp(clients[client_index].pending_challenge_from[i], target_name) == 0)
+      {
+         notify(sock, MSG_ERROR, "%s already challenged you; cannot send a reverse challenge", target_name);
+         return;
+      }
+   }
+
    /* Check if target is at max pending challenges received */
    if (clients[t].pending_challenge_from_count >= MAX_CHALLENGES)
    {
@@ -643,12 +660,6 @@ void handle_challenge_command(int sock, Client *clients, int client_index, int c
            clients[client_index].name, MAX_USERNAME_LEN - 1);
    clients[t].pending_challenge_from[clients[t].pending_challenge_from_count][MAX_USERNAME_LEN - 1] = '\0';
    clients[t].pending_challenge_from_count++;
-
-   /* Update status only if no other pending challenges or not in match */
-   if (clients[client_index].status == CLIENT_IDLE && clients[client_index].pending_challenge_to_count > 0)
-   {
-      clients[client_index].status = CLIENT_WAITING_FOR_ACCEPT;
-   }
 
    notify(sock, MSG_INFO, "Challenge sent to %s", clients[t].name);
    notify(clients[t].sock, MSG_CHALLENGE, "from %s", clients[client_index].name);
@@ -715,12 +726,6 @@ void handle_cancel_command(int sock, Client *clients, int client_index, int clie
    }
    clients[client_index].pending_challenge_to_count--;
 
-   /* Update status: if no more pending challenges and not in match, go back to IDLE */
-   if (clients[client_index].pending_challenge_to_count == 0 && clients[client_index].status == CLIENT_WAITING_FOR_ACCEPT)
-   {
-      clients[client_index].status = CLIENT_IDLE;
-   }
-
    notify(sock, MSG_INFO, "Challenge to %s cancelled", target_name);
 }
 
@@ -772,12 +777,6 @@ void handle_refuse_command(int sock, Client *clients, int client_index, int clie
             clients[s].pending_challenge_to_count--;
             break;
          }
-      }
-
-      /* Update challenger's status if no more pending challenges */
-      if (clients[s].pending_challenge_to_count == 0 && clients[s].status == CLIENT_WAITING_FOR_ACCEPT)
-      {
-         clients[s].status = CLIENT_IDLE;
       }
 
       notify(clients[s].sock, MSG_CHALLENGE_RESPONSE, "%s refused your challenge", clients[client_index].name);
@@ -884,13 +883,6 @@ void handle_accept_command(int sock, Client *clients, int client_index, int clie
             }
          }
          
-         /* Update other challenger's status if needed */
-         if (clients[other_challenger_idx].pending_challenge_to_count == 0 && 
-             clients[other_challenger_idx].status == CLIENT_WAITING_FOR_ACCEPT)
-         {
-            clients[other_challenger_idx].status = CLIENT_IDLE;
-         }
-         
          /* Notify other challenger of refusal */
          notify(clients[other_challenger_idx].sock, MSG_CHALLENGE_RESPONSE, 
                 "%s accepted another challenge and refused yours", clients[client_index].name);
@@ -930,12 +922,6 @@ void handle_accept_command(int sock, Client *clients, int client_index, int clie
    
    /* Clear all outgoing challenges */
    clients[client_index].pending_challenge_to_count = 0;
-
-   /* Update status of both players */
-   if (clients[s].pending_challenge_to_count == 0 && clients[s].status == CLIENT_WAITING_FOR_ACCEPT)
-   {
-      clients[s].status = CLIENT_IDLE;
-   }
    clients[client_index].status = CLIENT_IDLE;
 
    /* Start the match */
@@ -1080,6 +1066,12 @@ void handle_watch_command(int sock, Client *clients, int client_index, int clien
       notify(sock, MSG_ERROR, "Usage: watch <matchId>");
       return;
    }
+   // Prevent watching any match while playing in a match
+   if (clients[client_index].status == CLIENT_IN_MATCH)
+   {
+      notify(sock, MSG_ERROR, "You cannot watch matches while playing in a match");
+      return;
+   }
    int id = atoi(match_id_str);
    if (id < 0 || id >= match_count)
    {
@@ -1087,12 +1079,6 @@ void handle_watch_command(int sock, Client *clients, int client_index, int clien
       return;
    }
    Match *m = &matches[id];
-   // Disallow watching own match (already receiving updates)
-   if (clients[client_index].current_match == id && clients[client_index].status == CLIENT_IN_MATCH)
-   {
-      notify(sock, MSG_ERROR, "You are already playing in this match");
-      return;
-   }
    // Enforce privacy: if match is private, must be friend with at least one player (both acceptable)
    if (m->private_mode)
    {

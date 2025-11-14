@@ -23,10 +23,10 @@ void init_board(Board *board)
 void display_board(const Board *board)
 {
     printf("\n");
-    printf("=====================================\n\n");
+    printf("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
 
     // Player 2's side (top, reversed for visual clarity)
-    printf("%sPlayer 2 [Score: %2d]           <-- Direction%s\n", COLOR_BOLD COLOR_YELLOW, board->score[1], COLOR_RESET);
+    printf("%sPlayer 2:%s %s%2d%s           %s<-- Direction%s\n", COLOR_BOLD COLOR_YELLOW, COLOR_RESET, COLOR_BOLD COLOR_YELLOW, board->score[1], COLOR_RESET, STYLE_DIM, COLOR_RESET);
     printf("     ");
     for (int i = TOTAL_PITS - 1; i >= PITS_PER_PLAYER; i--)
     {
@@ -58,7 +58,8 @@ void display_board(const Board *board)
     {
         printf("%s[%2d]%s", COLOR_RED, board->pits[i], COLOR_RESET);
     }
-    printf("\n%sDirection -->           Player 1 [Score: %2d]%s\n\n", COLOR_BOLD COLOR_YELLOW, board->score[0], COLOR_RESET);
+    printf("\n%sDirection -->%s           %sPlayer 1: %2d%s\n", STYLE_DIM, COLOR_RESET, COLOR_BOLD COLOR_YELLOW, board->score[0], COLOR_RESET);
+    printf("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
 }
 
 // Render the board to a provided buffer (similar to display_board but as text)
@@ -79,13 +80,12 @@ int render_board(const Board *board, char *out, size_t out_size)
     } while (0)
 
     APPENDF("\n");
-    APPENDF("=====================================\n\n");
-
-    APPENDF("%sPlayer 2 [Score: %2d]           <-- Direction%s\n", COLOR_BOLD COLOR_YELLOW, board->score[1], COLOR_RESET);
+    APPENDF("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
+    APPENDF("%sPlayer 2:%s %s%2d%s           %s<-- Direction%s\n", COLOR_BOLD COLOR_YELLOW, COLOR_RESET, COLOR_BOLD COLOR_YELLOW, board->score[1], COLOR_RESET, STYLE_DIM, COLOR_RESET);
     APPENDF("     ");
     for (int i = TOTAL_PITS - 1; i >= PITS_PER_PLAYER; i--)
     {
-        APPENDF("%s[%2d]%s", COLOR_GREEN, board->pits[i], COLOR_RESET);
+        APPENDF("%s[%2d]%s", COLOR_BOLD COLOR_GREEN, board->pits[i], COLOR_RESET);
     }
     APPENDF("\n");
 
@@ -96,7 +96,7 @@ int render_board(const Board *board, char *out, size_t out_size)
     }
     APPENDF("\n");
 
-    APPENDF("%s     -------------------------%s\n", COLOR_BLUE, COLOR_RESET);
+    APPENDF("%s     -------------------------%s\n", STYLE_DIM, COLOR_RESET);
 
     APPENDF("%sPit:  %s", STYLE_DIM, COLOR_RESET);
     for (int i = 0; i < PITS_PER_PLAYER; i++)
@@ -108,9 +108,10 @@ int render_board(const Board *board, char *out, size_t out_size)
     APPENDF("     ");
     for (int i = 0; i < PITS_PER_PLAYER; i++)
     {
-        APPENDF("%s[%2d]%s", COLOR_RED, board->pits[i], COLOR_RESET);
+        APPENDF("%s[%2d]%s", COLOR_BOLD COLOR_RED, board->pits[i], COLOR_RESET);
     }
-    APPENDF("\n%sDirection -->           Player 1 [Score: %2d]%s\n\n", COLOR_BOLD COLOR_YELLOW, board->score[0], COLOR_RESET);
+    APPENDF("\n%sDirection -->%s           %sPlayer 1: %2d%s\n", STYLE_DIM, COLOR_RESET, COLOR_BOLD COLOR_YELLOW, board->score[0], COLOR_RESET);
+    APPENDF("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
 
 #undef APPENDF
     if (off >= out_size)
@@ -325,9 +326,10 @@ bool is_game_over(const Board *board)
 void display_winner(const Board *board)
 {
     printf("\n");
-    printf("=====================================\n");
+    printf("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
     printf("           GAME OVER!\n");
-    printf("=====================================\n");
+    printf("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
+
     printf("Player 1 Score: %d\n", board->score[0]);
     printf("Player 2 Score: %d\n", board->score[1]);
 
@@ -343,7 +345,7 @@ void display_winner(const Board *board)
     {
         printf("\n%s🤝 It's a TIE! 🤝%s\n", COLOR_BOLD COLOR_YELLOW, COLOR_RESET);
     }
-    printf("=====================================\n\n");
+    printf("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
 }
 
 // Get valid input from player
@@ -379,7 +381,7 @@ int get_player_input(const Board *board)
         // Validate the move
         if (is_valid_move(board, pit))
         {
-            printf("=====================================\n\n");
+            printf("%s=====================================%s\n", STYLE_DIM, COLOR_RESET);
             return pit;
         }
     }

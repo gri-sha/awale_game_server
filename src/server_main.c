@@ -10,9 +10,56 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-int main()
+static void display_help_menu(char *exec_name)
 {
-   int sock = init_connection(); // listening socket
+   printf("Usage: %s [--port <port_number>]\n", exec_name);
+   printf("Options:\n");
+   printf("  --port <port_number>   Specify the port number for the server to listen on (default: %d)\n", SERVER_PORT);
+   printf("  --help                 Show this help message\n");
+}
+
+int main(int argc, char *argv[])
+{
+   /* Parse command-line arguments */
+   int port = SERVER_PORT; /* default port */
+
+   for (int i = 1; i < argc; i++)
+   {
+      if (strcmp(argv[i], "--port") == 0)
+      {
+         if (i + 1 < argc)
+         {
+            port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535)
+            {
+               fprintf(stderr, "%s[error]%s Invalid port number: %s. Port must be between 1 and 65535.\n", COLOR_RED COLOR_BOLD, COLOR_RESET, argv[i + 1]);
+               display_help_menu(argv[0]);
+               return EXIT_FAILURE;
+            }
+            i++; /* skip next argument */
+         }
+         else
+         {
+            fprintf(stderr, "%s[error]%s --port requires a port number argument\n", COLOR_RED COLOR_BOLD, COLOR_RESET);
+            display_help_menu(argv[0]);
+
+            return EXIT_FAILURE;
+         }
+      }
+      else if (strcmp(argv[i], "--help") == 0)
+      {
+         display_help_menu(argv[0]);
+         return EXIT_SUCCESS;
+      }
+      else
+      {
+         fprintf(stderr, "%s[error]%s Unknown argument: %s\n", COLOR_RED COLOR_BOLD, COLOR_RESET, argv[i]);
+         display_help_menu(argv[0]);
+         return EXIT_FAILURE;
+      }
+   }
+
+   int sock = init_connection(port); // listening socket
    char buffer[BUF_SIZE];
 
    int client_count = 0; // the index for the array of client file descriptors (sockets)
@@ -46,7 +93,7 @@ int main()
    char *server_ip = get_server_ip();
    if (server_ip)
    {
-      printf("%s[server]%s Started on %s:%d\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, server_ip, SERVER_PORT);
+      printf("%s[server]%s Started on %s:%d\n", COLOR_GREEN COLOR_BOLD, COLOR_RESET, server_ip, port);
    }
    else
    {
@@ -159,7 +206,7 @@ int main()
                if (c == 0)
                {
                   close(clients[i].sock);
-                  
+
                   /* Handle match cleanup if client was in a match */
                   if (clients[i].status == CLIENT_IN_MATCH && clients[i].current_match >= 0)
                   {
@@ -168,18 +215,18 @@ int main()
                      {
                         /* Determine opponent */
                         int opponent_idx = (i == m->player1_index) ? m->player2_index : m->player1_index;
-                        
+
                         /* Notify opponent about disconnection */
                         notify(clients[opponent_idx].sock, MSG_GAME_OVER, "%s disconnected from the match", clients[i].name);
-                        
+
                         /* Award win to opponent */
                         clients[opponent_idx].wins++;
-                        
+
                         /* End the match */
                         end_match(m, clients);
                      }
                   }
-                  
+
                   /* Clean up pending challenges sent by this client */
                   for (int j = 0; j < clients[i].pending_challenge_to_count; j++)
                   {
@@ -193,8 +240,8 @@ int main()
                            {
                               for (int m = k; m < clients[target_idx].pending_challenge_from_count - 1; m++)
                               {
-                                 strncpy(clients[target_idx].pending_challenge_from[m], 
-                                        clients[target_idx].pending_challenge_from[m + 1], MAX_USERNAME_LEN - 1);
+                                 strncpy(clients[target_idx].pending_challenge_from[m],
+                                         clients[target_idx].pending_challenge_from[m + 1], MAX_USERNAME_LEN - 1);
                               }
                               clients[target_idx].pending_challenge_from_count--;
                               break;
@@ -202,7 +249,7 @@ int main()
                         }
                      }
                   }
-                  
+
                   /* Clean up pending challenges received by this client */
                   for (int j = 0; j < clients[i].pending_challenge_from_count; j++)
                   {
@@ -216,23 +263,16 @@ int main()
                            {
                               for (int m = k; m < clients[challenger_idx].pending_challenge_to_count - 1; m++)
                               {
-                                 strncpy(clients[challenger_idx].pending_challenge_to[m], 
-                                        clients[challenger_idx].pending_challenge_to[m + 1], MAX_USERNAME_LEN - 1);
+                                 strncpy(clients[challenger_idx].pending_challenge_to[m],
+                                         clients[challenger_idx].pending_challenge_to[m + 1], MAX_USERNAME_LEN - 1);
                               }
                               clients[challenger_idx].pending_challenge_to_count--;
                               break;
                            }
                         }
-                        
-                        /* Update challenger's status if needed */
-                        if (clients[challenger_idx].pending_challenge_to_count == 0 && 
-                            clients[challenger_idx].status == CLIENT_WAITING_FOR_ACCEPT)
-                        {
-                           clients[challenger_idx].status = CLIENT_IDLE;
-                        }
                      }
                   }
-                  
+
                   remove_client(clients, i, &client_count);
                   printf("%s[disconnection]%s %s left the server\n", COLOR_YELLOW COLOR_BOLD, COLOR_RESET, client.name);
                   strncpy(buffer, client.name, BUF_SIZE - 1);

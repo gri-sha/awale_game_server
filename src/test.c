@@ -154,6 +154,8 @@ int main()
     printf("\n");
 
     init_test_board(&board);
+    while ((getchar()) != '\n')
+        ; // Clear input buffer
 
     // Main game loop
     while (!is_game_over(&board))
